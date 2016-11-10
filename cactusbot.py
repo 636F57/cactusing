@@ -4,17 +4,23 @@ import random
 import glob
 from os.path import basename
 import time
+# import sqlite3  # Since using SQL is overkill for a single server, i switched to using just a txt file to store data.
 
-if not discord.opus.is_loaded():
+# conn = sqlite3.connect('rssfeed.db')
+# sql = '''CREATE TABLE  IF NOT EXISTS  reddit(url TEXT UNIQUE, lastmodified TEXT, etag TEXT);'''
+# conn.execute(sql)
+
+if not discord.opus.is_loaded():      #this is needed for voice activities
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
 
 description = '''Utility Bot custom-made for this CACTUS ROOMS server. :slight_smile:'''
 bot = commands.Bot(command_prefix='#', description=description)
 	
-nShouldEchoNum = 0
-cmdPrefix = ""
+listEcho = []
 Mee6_ID = "159985870458322944"
+fredboadPrefix = ";;play "
+marshmallowPrefix = ":request "
 
 @bot.event
 async def on_ready():
@@ -26,18 +32,15 @@ async def on_ready():
 @bot.event
 async def on_message(message):	
 	print("on message : ", message.content, message.author.name, message.author.id)
-	global nShouldEchoNum
-	global cmdPrefix
+	global listEcho
 	if (message.author.id == Mee6_ID):
 		print("message by Mee6")
-		if nShouldEchoNum > 0:
+		if len(listEcho) > 0:
 			print(message.content)
 			if 'youtu' in message.content:
 				print("in echo")
-				await bot.send_message(message.channel, cmdPrefix +' '+ message.content)
-				nShouldEchoNum -= 1
-				if nShouldEchoNum < 0:
-					nShouldEchoNum = 0
+				await bot.send_message(message.channel, listEcho[0] + message.content)
+				listEcho.pop(0)
 	else:				
 		await bot.process_commands(message)
 	
@@ -72,13 +75,10 @@ async def feeda(number : int, category='favorite'):
 @bot.command()
 async def feedf(number : int, category='favorite'):
 	"""Feed number of songs to FredBoat, randomly selecting from the txt file."""
-	global nShouldEchoNum
-	global cmdPrefix
+	global listEcho
 	if number > 5:
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
-	nShouldEchoNum += number
-	cmdPrefix = ";;play"
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
 	f = open(strFile, "rt")
@@ -87,18 +87,16 @@ async def feedf(number : int, category='favorite'):
 	for i in range(number):
 		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
 		await bot.say(strCommand)
+		listEcho.append(fredboadPrefix)
 	f.close()
 
 @bot.command()
 async def feedm(number : int, category='favorite'):
 	"""Feed number of songs to Marshmallow, randomly selecting from the txt file."""
-	global nShouldEchoNum
-	global cmdPrefix
+	global listEcho
 	if number > 5:
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
-	nShouldEchoNum += number
-	cmdPrefix = ":request"
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
 	f = open(strFile, "rt")
@@ -107,6 +105,7 @@ async def feedm(number : int, category='favorite'):
 	for i in range(number):
 		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
 		await bot.say(strCommand)
+		listEcho.append(marshmallowPrefix)
 		time. sleep(8)       # since requests to marshmallow must have 10sec intervals
 	f.close()
 	
@@ -121,7 +120,7 @@ async def feedf_url(number : int):
 	listURLs = f.readlines()
 	print("list length = ", len(listURLs))
 	for i in range(number):
-		strCommand = ";;play " + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+		strCommand = fredboadPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
 		await bot.say(strCommand)
 	f.close()
 
@@ -136,7 +135,7 @@ async def feedm_url(number : int):
 	listURLs = f.readlines()
 	print("list length = ", len(listURLs))
 	for i in range(number):
-		strCommand = ":request " + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+		strCommand = marshmallowPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
 		await bot.say(strCommand)
 		time. sleep(9)       # since requests to marshmallow must have 10sec intervals
 	f.close()
@@ -184,14 +183,16 @@ async def join(ctx):
 @bot.command()
 async def ytm(text):
 	"""Feed search result to Marshmallow."""
+	global listEcho
 	await bot.say("!youtube " + text)
-
+	listEcho.append(marshmallowPrefix)
+	
 @bot.command()
 async def ytf(text):
 	"""Feed search result to FredBoat."""
-	global nShouldEchoNum
+	global listEcho
 	await bot.say("!youtube " + text)
-	nShouldEchoNum += 1
+	listEcho.append(fredboadPrefix)
 	
 @bot.command()
 async def add(left : int, right : int):

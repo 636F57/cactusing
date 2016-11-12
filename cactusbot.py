@@ -1,14 +1,15 @@
+### NOTE: This is based on the example file "basic_bot.py" included in the discord.py project.
+###  (https://github.com/Rapptz/discord.py/blob/master/examples/basic_bot.py)
+
 import discord
 from discord.ext import commands
 import random
 import glob
 from os.path import basename
 import time
-# import sqlite3  # Since using SQL is overkill for a single server, i switched to using just a txt file to store data.
-
-# conn = sqlite3.connect('rssfeed.db')
-# sql = '''CREATE TABLE  IF NOT EXISTS  reddit(url TEXT UNIQUE, lastmodified TEXT, etag TEXT);'''
-# conn.execute(sql)
+import aiohttp
+import re
+import beautifulsoup
 
 if not discord.opus.is_loaded():      #this is needed for voice activities
 	discord.opus.load_opus('libopus-0.dll')
@@ -17,10 +18,60 @@ print("opus dll is loaded = ", discord.opus.is_loaded())
 description = '''Utility Bot custom-made for this CACTUS ROOMS server. :slight_smile:'''
 bot = commands.Bot(command_prefix='#', description=description)
 	
-listEcho = []
+#global variants for music
+g_listEcho = []
 Mee6_ID = "159985870458322944"
 fredboadPrefix = ";;play "
 marshmallowPrefix = ":request "
+
+#global variants for RSS
+g_listRSS = []
+filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag"\n  for each entry
+
+
+async def getRSS(bot):
+	global g_listRSS
+	f = fopen(filenameRSS, "rt")
+	g_listRSS.clear()
+	for line in f:
+		g_listRSS.append(line.split(','))
+	f.close()
+	
+	if len(g_listRSS) == 0:
+		print("no RSS urls found.")
+		return
+		
+	header = {'User-Agent':'CactusBot'}
+	async session = aiohttp.ClientSession()
+	
+	for rss in g_listRSS:
+		if len(g_listRSS[2]) > 0:
+			header['If-Modified-Since'] = g_listRSS[2]   #Last-Modified
+		if len(g_listRSS[3]) > 0:
+			header['If-None-Match'] = g_listRSS[3]	     #ETAG
+		response = await session.get(rss[1], headers = header)
+		if response.status == 304:
+			print("no update for ", rss[1])
+		elif response.status == 200:
+			print(response.headers)
+			matches = re.search(r"'LAST-MODIFIED':'.*?'", response.headers)
+			if len(matches) > 0:
+				g_listRSS[2] = matches.group(0)
+			else:
+				g_listRSS[2] = ""
+			matches = re.search(r"'ETAG':'.*?'", response.headers)
+			if len(matches) > 0:
+				g_listRSS[3] = matches.group(0)
+			else:
+				g_listRSS[3] = ""
+			body = await response.read()
+			soup = beautifulsoup(body)
+			await bot.say(body)
+	
+	f = fopen(filenameRSS, "wt")
+	for line in g_listRSS:
+		g_listRSS.append(line.split(','))
+	f.close()
 
 @bot.event
 async def on_ready():
@@ -29,18 +80,21 @@ async def on_ready():
 	print(bot.user.id)
 	print('------')
 
+####  For music utility  ####
 @bot.event
 async def on_message(message):	
 	print("on message : ", message.content, message.author.name, message.author.id)
-	global listEcho
+	global g_listEcho
 	if (message.author.id == Mee6_ID):
 		print("message by Mee6")
-		if len(listEcho) > 0:
+		if len(g_listEcho) > 0:
 			print(message.content)
 			if 'youtu' in message.content:
 				print("in echo")
-				await bot.send_message(message.channel, listEcho[0] + message.content)
-				listEcho.pop(0)
+				await bot.send_message(message.channel, g_listEcho[0] + message.content)
+				g_listEcho.pop(0)
+				if (len(g_listEcho) > 0 ) & (g_listEcho[0] == marshmallowPrefix):
+						time. sleep(10)       # since requests to marshmallow must have 10sec intervals
 	else:				
 		await bot.process_commands(message)
 	
@@ -75,7 +129,7 @@ async def feeda(number : int, category='favorite'):
 @bot.command()
 async def feedf(number : int, category='favorite'):
 	"""Feed number of songs to FredBoat, randomly selecting from the txt file."""
-	global listEcho
+	global g_listEcho
 	if number > 5:
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
@@ -87,13 +141,13 @@ async def feedf(number : int, category='favorite'):
 	for i in range(number):
 		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
 		await bot.say(strCommand)
-		listEcho.append(fredboadPrefix)
+		g_listEcho.append(fredboadPrefix)
 	f.close()
 
 @bot.command()
 async def feedm(number : int, category='favorite'):
 	"""Feed number of songs to Marshmallow, randomly selecting from the txt file."""
-	global listEcho
+	global g_listEcho
 	if number > 5:
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
@@ -105,8 +159,7 @@ async def feedm(number : int, category='favorite'):
 	for i in range(number):
 		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
 		await bot.say(strCommand)
-		listEcho.append(marshmallowPrefix)
-		time. sleep(8)       # since requests to marshmallow must have 10sec intervals
+		g_listEcho.append(marshmallowPrefix)
 	f.close()
 	
 @bot.command()
@@ -159,7 +212,54 @@ async def favor_url(url):
 	f.write(url + "\n")
 	f.close()
 	await bot.say(url + " is added. :smile:")
+
+#############################
+
+####  For RSS utility   #####
+@bot.command()
+async def rss_add(url):
+	"""Add URL to RSS check-list."""
+	f = fopen(filenameRSS, "a+")
+	lines = f.readlines()
+	max_index = lines[len(lines)-1].split(').[0]
+	print("maxindex was ", max_index)
+	f.write(str(int(max_index)+1)+url+",,")
+	f.close()
+	await bot.say(url+" was added to RSS list.:slight_smile:")
+
+@bot.command()
+async def rss_list():
+	"""List all the URLs of RSS check-list."""
+	f = fopen(filenameRSS, "rt")
+	lines = f.readlines()
+	for line in lines:
+		items = line.split(',')
+		await bot.say(items[0]+": " + items[1])  #list index and URL
+	f.close()
 	
+@bot.command()
+async def rss_del(index):
+	"""Delete the specified URL from RSS check-list."""
+	f = fopen(filenameRSS, "rt")
+	lines = f.readlines()
+	f.close()
+	output = []
+	for line in lines:
+		items = line.split(',')
+		if items[0] != index:
+			output.append(line)
+	f = fopen(filenameRSS, "wt")
+	for line in output:
+		f.write(line)
+	f.close()
+	if len(output) < len(lines):
+		await bot.say(index+" was deleted.")
+	else
+		await bot.say(index+" was not found in the list.")
+
+#######################
+
+##### Others  #########
 @bot.command()
 async def test():
 	"""command for test and debug"""
@@ -183,16 +283,16 @@ async def join(ctx):
 @bot.command()
 async def ytm(text):
 	"""Feed search result to Marshmallow."""
-	global listEcho
+	global g_listEcho
 	await bot.say("!youtube " + text)
-	listEcho.append(marshmallowPrefix)
+	g_listEcho.append(marshmallowPrefix)
 	
 @bot.command()
 async def ytf(text):
 	"""Feed search result to FredBoat."""
-	global listEcho
+	global g_listEcho
 	await bot.say("!youtube " + text)
-	listEcho.append(fredboadPrefix)
+	g_listEcho.append(fredboadPrefix)
 	
 @bot.command()
 async def add(left : int, right : int):

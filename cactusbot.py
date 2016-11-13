@@ -8,8 +8,10 @@ import glob
 from os.path import basename
 import time
 import aiohttp
-import re
-import beautifulsoup
+from bs4 import BeautifulSoup
+import asyncio
+import html
+
 
 if not discord.opus.is_loaded():      #this is needed for voice activities
 	discord.opus.load_opus('libopus-0.dll')
@@ -27,11 +29,12 @@ marshmallowPrefix = ":request "
 #global variants for RSS
 g_listRSS = []
 filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag"\n  for each entry
-
+session = aiohttp.ClientSession()
 
 async def getRSS(bot):
 	global g_listRSS
-	f = fopen(filenameRSS, "rt")
+	global session
+	f = open(filenameRSS, "rt")
 	g_listRSS.clear()
 	for line in f:
 		g_listRSS.append(line.split(','))
@@ -42,35 +45,61 @@ async def getRSS(bot):
 		return
 		
 	header = {'User-Agent':'CactusBot'}
-	async session = aiohttp.ClientSession()
 	
 	for rss in g_listRSS:
-		if len(g_listRSS[2]) > 0:
-			header['If-Modified-Since'] = g_listRSS[2]   #Last-Modified
-		if len(g_listRSS[3]) > 0:
-			header['If-None-Match'] = g_listRSS[3]	     #ETAG
+		if len(rss[2]) > 0:
+			header['If-Modified-Since'] = rss[2]   #Last-Modified
+		if len(rss[3]) > 0:
+			header['If-None-Match'] = rss[3]	     #ETAG
 		response = await session.get(rss[1], headers = header)
+		print("response status=",response.status)
 		if response.status == 304:
 			print("no update for ", rss[1])
 		elif response.status == 200:
-			print(response.headers)
-			matches = re.search(r"'LAST-MODIFIED':'.*?'", response.headers)
-			if len(matches) > 0:
-				g_listRSS[2] = matches.group(0)
+			#print(response.headers)
+			if 'LAST-MODIFIED' in response.headers:
+				rss[2] = response.headers['LAST-MODIFIED']
 			else:
-				g_listRSS[2] = ""
-			matches = re.search(r"'ETAG':'.*?'", response.headers)
-			if len(matches) > 0:
-				g_listRSS[3] = matches.group(0)
+				rss[2] = ""
+			if 'ETAG' in response.headers:
+				rss[3] = response.headers['ETAG']
 			else:
-				g_listRSS[3] = ""
+				rss[3] = ""
 			body = await response.read()
-			soup = beautifulsoup(body)
-			await bot.say(body)
-	
-	f = fopen(filenameRSS, "wt")
+			soup = BeautifulSoup(body, 'lxml')
+			entries = soup.find_all('entry')
+			print (len(entries))
+			for entry in entries:
+				#print(entry)
+				postcat = entry.find('category')
+				#print(postcat)
+				strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
+				strSay += "**Title : " + entry.find('title').text + '**\n'
+				#print(entry.find('content').text)
+				postcontent = html.unescape(entry.find('content').text)
+				print(postcontent)
+				postcontent = BeautifulSoup(postcontent)
+				urlcontent = postcontent.find_all('a')
+				print(urlcontent)
+				for url in urlcontent:
+					if '[link]' in url:
+						strSay += url['href'] + "\n"
+						break
+				# corecontent = postcontent.find('div', {'class':'md'})
+				# if corecontent:
+					# corecontent = corecontent.p.text
+					# if len(corecontent) > 120:
+						# strSay += "```" + corecontent[:120] + "...```"
+					# else:
+						# strSay += "```" + corecontent + "```"
+				# elif urlcontent[0].find('img'):
+					# strSay += urlcontent[0].img['src'] + "\n"
+					# strSay += "```" + urlcontent[0].img['alt'] + "```\n"
+				await bot.say(strSay)
+					
+	f = open(filenameRSS, "wt")
 	for line in g_listRSS:
-		g_listRSS.append(line.split(','))
+		f.write(','.join(line))
 	f.close()
 
 @bot.event
@@ -213,60 +242,6 @@ async def favor_url(url):
 	f.close()
 	await bot.say(url + " is added. :smile:")
 
-#############################
-
-####  For RSS utility   #####
-@bot.command()
-async def rss_add(url):
-	"""Add URL to RSS check-list."""
-	f = fopen(filenameRSS, "a+")
-	lines = f.readlines()
-	max_index = lines[len(lines)-1].split(').[0]
-	print("maxindex was ", max_index)
-	f.write(str(int(max_index)+1)+url+",,")
-	f.close()
-	await bot.say(url+" was added to RSS list.:slight_smile:")
-
-@bot.command()
-async def rss_list():
-	"""List all the URLs of RSS check-list."""
-	f = fopen(filenameRSS, "rt")
-	lines = f.readlines()
-	for line in lines:
-		items = line.split(',')
-		await bot.say(items[0]+": " + items[1])  #list index and URL
-	f.close()
-	
-@bot.command()
-async def rss_del(index):
-	"""Delete the specified URL from RSS check-list."""
-	f = fopen(filenameRSS, "rt")
-	lines = f.readlines()
-	f.close()
-	output = []
-	for line in lines:
-		items = line.split(',')
-		if items[0] != index:
-			output.append(line)
-	f = fopen(filenameRSS, "wt")
-	for line in output:
-		f.write(line)
-	f.close()
-	if len(output) < len(lines):
-		await bot.say(index+" was deleted.")
-	else
-		await bot.say(index+" was not found in the list.")
-
-#######################
-
-##### Others  #########
-@bot.command()
-async def test():
-	"""command for test and debug"""
-	await bot.say("!rank")
-	await bot.say(":help")
-	await bot.say(";;help")
-
 @bot.command(pass_context=True)
 async def join(ctx):
 	"""Let CactusBot to join the voice channel."""
@@ -278,7 +253,6 @@ async def join(ctx):
 		await bot.join_voice_channel(ctx.message.author.voice.voice_channel)
 	elif voiceclient.channel != ctx.message.channel:
 		await voiceclient.move_to(ctx.message.channel)
-		
 
 @bot.command()
 async def ytm(text):
@@ -293,6 +267,65 @@ async def ytf(text):
 	global g_listEcho
 	await bot.say("!youtube " + text)
 	g_listEcho.append(fredboadPrefix)
+
+#############################
+
+####  For RSS utility   #####
+@bot.command()
+async def rss_add(url):
+	"""Add URL to RSS check-list."""
+	f = open(filenameRSS, "a+")
+	lines = f.readlines()
+	max_index = 0
+	if len(lines) > 0:
+		max_index = (lines[len(lines)-1].split(','))[0]
+	print("maxindex was ", max_index)
+	f.write(str(int(max_index)+1)+","+url+",,\n")
+	f.close()
+	await bot.say(url+" was added to RSS list.:slight_smile:")
+
+@bot.command()
+async def rss_list():
+	"""List all the URLs of RSS check-list."""
+	f = open(filenameRSS, "rt")
+	lines = f.readlines()
+	if len(lines) == 0:
+		await bot.say("There is no URL in the list.")
+	for line in lines:
+		items = line.split(',')
+		await bot.say(items[0]+" : " + items[1])  #list index and URL
+	f.close()
+	
+@bot.command()
+async def rss_del(index):
+	"""Delete the specified URL from RSS check-list."""
+	f = open(filenameRSS, "rt")
+	lines = f.readlines()
+	f.close()
+	output = []
+	for line in lines:
+		items = line.split(',')
+		if items[0] != index:
+			output.append(line)
+	f = open(filenameRSS, "wt")
+	for line in output:
+		f.write(line)
+	f.close()
+	if len(output) < len(lines):
+		await bot.say(index+" was deleted.")
+	else:
+		await bot.say(index+" was not found in the list.")
+
+#######################
+
+##### Others  #########
+@bot.command()
+async def test():
+	"""command for test and debug"""
+	await bot.say("RSS test started.")
+	await getRSS(bot)
+	
+
 	
 @bot.command()
 async def add(left : int, right : int):
@@ -340,4 +373,15 @@ async def _bot():
 	"""Is the bot cool?"""
 	await bot.say('Yes, the bot is cool.')
 
-bot.run('MjQ1MzUyODMyNzEzMjI4Mjg5.CwK2Kg.kh-PkKal3nO8lA3cEEgGxZ4eBkA')
+######################################
+
+loop = asyncio.get_event_loop()
+try:
+	loop.run_until_complete(bot.start('MjQ1MzUyODMyNzEzMjI4Mjg5.CwK2Kg.kh-PkKal3nO8lA3cEEgGxZ4eBkA'))
+except KeyboardInterrupt:
+	loop.run_until_complete(bot.logout())
+	# cancel all tasks lingering
+finally:
+	loop.close()
+	if session:
+		session.close()

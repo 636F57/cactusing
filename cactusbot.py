@@ -29,7 +29,8 @@ marshmallowPrefix = ":request "
 #global variants for RSS
 g_listRSS = []
 filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag"\n  for each entry
-session = aiohttp.ClientSession()
+g_session = aiohttp.ClientSession()
+g_interval = 2
 		
 @bot.event
 async def on_ready():
@@ -52,7 +53,7 @@ async def on_message(message):
 				await bot.send_message(message.channel, g_listEcho[0] + message.content)
 				g_listEcho.pop(0)
 				if (len(g_listEcho) > 0 ) & (g_listEcho[0] == marshmallowPrefix):
-						time. sleep(10)       # since requests to marshmallow must have 10sec intervals
+						await asyncio.sleep(10)       # since requests to marshmallow must have 10sec intervals
 	else:				
 		await bot.process_commands(message)
 	
@@ -76,13 +77,12 @@ async def feeda(number : int, category='favorite'):
 		number = 5
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
-	f = open(strFile, "rt")
-	listSongs = f.readlines()
-	print("list length = ", len(listSongs))
-	for i in range(number):
-		strCommand = "-play " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
-		await bot.say(strCommand)
-	f.close()
+	open(strFile, "rt") as f:
+		listSongs = f.readlines()
+		print("list length = ", len(listSongs))
+		for i in range(number):
+			strCommand = "-play " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
+			await bot.say(strCommand)
 
 @bot.command()
 async def feedf(number : int, category='favorite'):
@@ -93,14 +93,13 @@ async def feedf(number : int, category='favorite'):
 		number = 5		
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
-	f = open(strFile, "rt")
-	listSongs = f.readlines()
-	print("list length = ", len(listSongs))
-	for i in range(number):
-		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
-		await bot.say(strCommand)
-		g_listEcho.append(fredboadPrefix)
-	f.close()
+	with open(strFile, "rt") as f:
+		listSongs = f.readlines()
+		print("list length = ", len(listSongs))
+		for i in range(number):
+			strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
+			await bot.say(strCommand)
+			g_listEcho.append(fredboadPrefix)
 
 @bot.command()
 async def feedm(number : int, category='favorite'):
@@ -111,14 +110,13 @@ async def feedm(number : int, category='favorite'):
 		number = 5		
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
-	f = open(strFile, "rt")
-	listSongs = f.readlines()
-	print("list length = ", len(listSongs))
-	for i in range(number):
-		strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
-		await bot.say(strCommand)
-		g_listEcho.append(marshmallowPrefix)
-	f.close()
+	with open(strFile, "rt") as f:
+		listSongs = f.readlines()
+		print("list length = ", len(listSongs))
+		for i in range(number):
+			strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
+			await bot.say(strCommand)
+			g_listEcho.append(marshmallowPrefix)
 	
 @bot.command()
 async def feedf_url(number : int):
@@ -127,13 +125,12 @@ async def feedf_url(number : int):
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
 	strFile = "./Songs/FavoriteURLs"
-	f = open(strFile, "rt")
-	listURLs = f.readlines()
-	print("list length = ", len(listURLs))
-	for i in range(number):
-		strCommand = fredboadPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
-		await bot.say(strCommand)
-	f.close()
+	with open(strFile, "rt") as f:
+		listURLs = f.readlines()
+		print("list length = ", len(listURLs))
+		for i in range(number):
+			strCommand = fredboadPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+			await bot.say(strCommand)
 
 @bot.command()
 async def feedm_url(number : int):
@@ -142,23 +139,21 @@ async def feedm_url(number : int):
 		await bot.say("Maximun queue is limited to 5 songs.")
 		number = 5		
 	strFile = "./Songs/FavoriteURLs"
-	f = open(strFile, "rt")
-	listURLs = f.readlines()
-	print("list length = ", len(listURLs))
-	for i in range(number):
-		strCommand = marshmallowPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
-		await bot.say(strCommand)
-		time. sleep(9)       # since requests to marshmallow must have 10sec intervals
-	f.close()
+	with open(strFile, "rt") as f:
+		listURLs = f.readlines()
+		print("list length = ", len(listURLs))
+		for i in range(number):
+			strCommand = marshmallowPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+			await bot.say(strCommand)
+			time. sleep(9)       # since requests to marshmallow must have 10sec intervals
 
 @bot.command()
 async def favor(song):
 	"""Add the song to Favorite.txt file."""
 	if song == "":
 		await bot.say("You must specify the song to add.")
-	f = open("./Songs/Favorite.txt", "a+")
-	f.write(song + "\n")
-	f.close()
+	with open("./Songs/Favorite.txt", "a+") as f:
+		f.write(song + "\n")
 	await bot.say(song + " is added. :cactus:")
 
 @bot.command()
@@ -166,9 +161,8 @@ async def favor_url(url):
 	"""Add the URL to FavoriteURLs file."""
 	if url == "":
 		await bot.say("You must specify the URL to add.")
-	f = open("./Songs/FavoriteURLs", "a+")
-	f.write(url + "\n")
-	f.close()
+	with open("./Songs/FavoriteURLs", "a+") as f:
+		f.write(url + "\n")
 	await bot.say(url + " is added. :cactus:")
 
 @bot.command(pass_context=True)
@@ -203,14 +197,13 @@ async def ytf(text):
 @bot.command()
 async def rss_add_reddit(sub):
 	"""Specify the subreddit name. Add the subreddit to RSS check-list."""
-	f = open(filenameRSS, "a+")
-	lines = f.readlines()
-	max_index = 0
-	if len(lines) > 0:
-		max_index = (lines[len(lines)-1].split(','))[0]
-	print("maxindex was ", max_index)
-	f.write(str(int(max_index)+1)+",https://www.reddit.com/r/"+sub+"/.rss,,\n")
-	f.close()
+	with open(filenameRSS, "a+") as f:
+		lines = f.readlines()
+		max_index = 0
+		if len(lines) > 0:
+			max_index = (lines[len(lines)-1].split(','))[0]
+		print("maxindex was ", max_index)
+		f.write(str(int(max_index)+1)+",https://www.reddit.com/r/"+sub+"/.rss,,\n")
 	await bot.say(url+" was added to RSS list.:cactus:")
 
 @bot.command()
@@ -219,59 +212,55 @@ async def rss_add_github(url):
 	if not 'github' in url:
 		await bot.say("It is not GitHub URL.")
 		return		
-	f = open(filenameRSS, "a+")
-	lines = f.readlines()
-	max_index = 0
-	if len(lines) > 0:
-		max_index = (lines[len(lines)-1].split(','))[0]
-	print("maxindex was ", max_index)
-	if url[len(url)-1] != '/':
-		url += '/'
-	f.write(str(int(max_index)+1)+","+url+"commits/master.atom,,\n")
-	f.close()
+	with open(filenameRSS, "a+") as f:
+		lines = f.readlines()
+		max_index = 0
+		if len(lines) > 0:
+			max_index = (lines[len(lines)-1].split(','))[0]
+		print("maxindex was ", max_index)
+		if url[len(url)-1] != '/':
+			url += '/'
+		f.write(str(int(max_index)+1)+","+url+"commits/master.atom,,\n")
 	await bot.say(url+" was added to RSS list.:cactus:")
 	
 @bot.command()
 async def rss_list():
 	"""List all the URLs of RSS check-list."""
-	f = open(filenameRSS, "rt")
-	lines = f.readlines()
-	if len(lines) == 0:
-		await bot.say("There is no URL in the list.")
-	for line in lines:
-		items = line.split(',')
-		await bot.say(items[0]+" : " + items[1])  #list index and URL
-	f.close()
+	with open(filenameRSS, "rt") as f:
+		lines = f.readlines()
+		if len(lines) == 0:
+			await bot.say("There is no URL in the list.")
+		for line in lines:
+			items = line.split(',')
+			await bot.say(items[0]+" : " + items[1])  #list index and URL
 	
 @bot.command()
 async def rss_del(index):
 	"""Delete the specified URL from RSS check-list."""
-	f = open(filenameRSS, "rt")
-	lines = f.readlines()
-	f.close()
+	with open(filenameRSS, "rt") as f:
+		lines = f.readlines()
 	output = []
 	for line in lines:
 		items = line.split(',')
 		if items[0] != index:
 			output.append(line)
-	f = open(filenameRSS, "wt")
-	for line in output:
-		f.write(line)
-	f.close()
+	with open(filenameRSS, "wt") as f:
+		for line in output:
+			f.write(line)
 	if len(output) < len(lines):
 		await bot.say(index+" was deleted.")
 	else:
 		await bot.say(index+" was not found in the list.")
 
 # function that is called as a task to fetch and report RSS updates
-async def getRSS(bot):
+async def checkRSS(bot):
 	global g_listRSS
-	global session
-	f = open(filenameRSS, "rt")
-	g_listRSS.clear()
-	for line in f:
-		g_listRSS.append(line.split(','))
-	f.close()
+	global g_session
+	global g_interval
+	with open(filenameRSS, "rt") as f:
+		g_listRSS.clear()
+		for line in f:
+			g_listRSS.append(line.split(','))
 	
 	if len(g_listRSS) == 0:
 		print("no RSS urls found.")
@@ -284,7 +273,7 @@ async def getRSS(bot):
 			header['If-Modified-Since'] = rss[2]   #Last-Modified
 		if len(rss[3]) > 0:
 			header['If-None-Match'] = rss[3]	     #ETAG
-		response = await session.get(rss[1], headers = header)
+		response = await g_session.get(rss[1], headers = header)
 		print("response status=",response.status)
 		if response.status == 304:
 			print("no update for ", rss[1])
@@ -303,21 +292,22 @@ async def getRSS(bot):
 			entries = soup.find_all('entry')
 			print (len(entries))
 			if 'reddit' in g_listRSS[1]:
-				process_reddit(entries)
+				process_reddit(bot, entries, g_interval)
 			elif 'vbparadise' in g_listRSS[1]:
 
 			elif 'github' in g_listRSS[1]:
-				process_github(entries)
+				process_github(bot, entries, g_interval)
 			
-	f = open(filenameRSS, "wt")
-	for line in g_listRSS:
-		f.write(','.join(line))
-	f.close()
+	with open(filenameRSS, "wt") as f:
+		for line in g_listRSS:
+			f.write(','.join(line))
+			
+	await asyncio.sleep(g_interval)
 
 # functions which actrually parse the HTML and make the bot say the results
-async def process_reddit(bot, entries):
+async def process_reddit(bot, entries, interval):
 	for entry in entries:
-		if is_updated(entry.find('updated').text):
+		if is_updated(entry.find('updated').text, interval):
 			postcat = entry.find('category')
 			#print(postcat)
 			strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
@@ -334,10 +324,10 @@ async def process_reddit(bot, entries):
 					break
 			await bot.say(strSay)
 
-async def process_github(bot, entries):
+async def process_github(bot, entries, interval):
 	for entry in entries:
 		#print(entry)
-		if is_updated(entry.find('updated').text) :
+		if is_updated(entry.find('updated').text, interval) :
 			strSay = "*New Commit at GitHub by " + entry.author.name.text + '*\n\n'
 			strSay += "**Title : " + entry.find('title').text + '**\n'
 			strSay += entry.find('link').text			
@@ -366,7 +356,7 @@ def is_updated(updatedtime, backhours):
 async def test():
 	"""command for test and debug"""
 	await bot.say("RSS test started.")
-	await getRSS(bot)
+	await checkRSS(bot)
 	
 
 	
@@ -420,11 +410,15 @@ async def _bot():
 
 loop = asyncio.get_event_loop()
 try:
+	#loop.create_task(checkRSS(bot))
 	loop.run_until_complete(bot.start('MjQ1MzUyODMyNzEzMjI4Mjg5.CwK2Kg.kh-PkKal3nO8lA3cEEgGxZ4eBkA'))
 except KeyboardInterrupt:
 	loop.run_until_complete(bot.logout())
 	# cancel all tasks lingering
+	tasks = asyncio.all_tasks(loop)
+	for task in tasks:
+		task.cancel()
 finally:
 	loop.close()
-	if session:
-		session.close()
+	if g_session:
+		g_session.close()

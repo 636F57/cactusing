@@ -11,13 +11,13 @@ import aiohttp
 from bs4 import BeautifulSoup
 import asyncio
 import html
-
+import re
 
 if not discord.opus.is_loaded():      #this is needed for voice activities
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
 
-description = '''Utility Bot custom-made for this CACTUS ROOMS server. :slight_smile:'''
+description = '''Utility Bot custom-made for this CACTUS ROOMS server. :cactus:'''
 bot = commands.Bot(command_prefix='#', description=description)
 	
 #global variants for music
@@ -30,78 +30,7 @@ marshmallowPrefix = ":request "
 g_listRSS = []
 filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag"\n  for each entry
 session = aiohttp.ClientSession()
-
-async def getRSS(bot):
-	global g_listRSS
-	global session
-	f = open(filenameRSS, "rt")
-	g_listRSS.clear()
-	for line in f:
-		g_listRSS.append(line.split(','))
-	f.close()
-	
-	if len(g_listRSS) == 0:
-		print("no RSS urls found.")
-		return
 		
-	header = {'User-Agent':'CactusBot'}
-	
-	for rss in g_listRSS:
-		if len(rss[2]) > 0:
-			header['If-Modified-Since'] = rss[2]   #Last-Modified
-		if len(rss[3]) > 0:
-			header['If-None-Match'] = rss[3]	     #ETAG
-		response = await session.get(rss[1], headers = header)
-		print("response status=",response.status)
-		if response.status == 304:
-			print("no update for ", rss[1])
-		elif response.status == 200:
-			#print(response.headers)
-			if 'LAST-MODIFIED' in response.headers:
-				rss[2] = response.headers['LAST-MODIFIED']
-			else:
-				rss[2] = ""
-			if 'ETAG' in response.headers:
-				rss[3] = response.headers['ETAG']
-			else:
-				rss[3] = ""
-			body = await response.read()
-			soup = BeautifulSoup(body, 'lxml')
-			entries = soup.find_all('entry')
-			print (len(entries))
-			for entry in entries:
-				#print(entry)
-				postcat = entry.find('category')
-				#print(postcat)
-				strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
-				strSay += "**Title : " + entry.find('title').text + '**\n'
-				#print(entry.find('content').text)
-				postcontent = html.unescape(entry.find('content').text)
-				print(postcontent)
-				postcontent = BeautifulSoup(postcontent)
-				urlcontent = postcontent.find_all('a')
-				print(urlcontent)
-				for url in urlcontent:
-					if '[link]' in url:
-						strSay += url['href'] + "\n"
-						break
-				# corecontent = postcontent.find('div', {'class':'md'})
-				# if corecontent:
-					# corecontent = corecontent.p.text
-					# if len(corecontent) > 120:
-						# strSay += "```" + corecontent[:120] + "...```"
-					# else:
-						# strSay += "```" + corecontent + "```"
-				# elif urlcontent[0].find('img'):
-					# strSay += urlcontent[0].img['src'] + "\n"
-					# strSay += "```" + urlcontent[0].img['alt'] + "```\n"
-				await bot.say(strSay)
-					
-	f = open(filenameRSS, "wt")
-	for line in g_listRSS:
-		f.write(','.join(line))
-	f.close()
-
 @bot.event
 async def on_ready():
 	print('Logged in as')
@@ -230,7 +159,7 @@ async def favor(song):
 	f = open("./Songs/Favorite.txt", "a+")
 	f.write(song + "\n")
 	f.close()
-	await bot.say(song + " is added. :smile:")
+	await bot.say(song + " is added. :cactus:")
 
 @bot.command()
 async def favor_url(url):
@@ -240,7 +169,7 @@ async def favor_url(url):
 	f = open("./Songs/FavoriteURLs", "a+")
 	f.write(url + "\n")
 	f.close()
-	await bot.say(url + " is added. :smile:")
+	await bot.say(url + " is added. :cactus:")
 
 @bot.command(pass_context=True)
 async def join(ctx):
@@ -272,18 +201,36 @@ async def ytf(text):
 
 ####  For RSS utility   #####
 @bot.command()
-async def rss_add(url):
-	"""Add URL to RSS check-list."""
+async def rss_add_reddit(sub):
+	"""Specify the subreddit name. Add the subreddit to RSS check-list."""
 	f = open(filenameRSS, "a+")
 	lines = f.readlines()
 	max_index = 0
 	if len(lines) > 0:
 		max_index = (lines[len(lines)-1].split(','))[0]
 	print("maxindex was ", max_index)
-	f.write(str(int(max_index)+1)+","+url+",,\n")
+	f.write(str(int(max_index)+1)+",https://www.reddit.com/r/"+sub+"/.rss,,\n")
 	f.close()
-	await bot.say(url+" was added to RSS list.:slight_smile:")
+	await bot.say(url+" was added to RSS list.:cactus:")
 
+@bot.command()
+async def rss_add_github(url):
+	"""Specify the URL of github repo. Add the repo to RSS check-list."""
+	if not 'github' in url:
+		await bot.say("It is not GitHub URL.")
+		return		
+	f = open(filenameRSS, "a+")
+	lines = f.readlines()
+	max_index = 0
+	if len(lines) > 0:
+		max_index = (lines[len(lines)-1].split(','))[0]
+	print("maxindex was ", max_index)
+	if url[len(url)-1] != '/':
+		url += '/'
+	f.write(str(int(max_index)+1)+","+url+"commits/master.atom,,\n")
+	f.close()
+	await bot.say(url+" was added to RSS list.:cactus:")
+	
 @bot.command()
 async def rss_list():
 	"""List all the URLs of RSS check-list."""
@@ -316,6 +263,92 @@ async def rss_del(index):
 	else:
 		await bot.say(index+" was not found in the list.")
 
+# function that is called as a task to fetch and report RSS updates
+async def getRSS(bot):
+	global g_listRSS
+	global session
+	f = open(filenameRSS, "rt")
+	g_listRSS.clear()
+	for line in f:
+		g_listRSS.append(line.split(','))
+	f.close()
+	
+	if len(g_listRSS) == 0:
+		print("no RSS urls found.")
+		return
+		
+	header = {'User-Agent':'CactusBot'}
+	
+	for rss in g_listRSS:
+		if len(rss[2]) > 0:
+			header['If-Modified-Since'] = rss[2]   #Last-Modified
+		if len(rss[3]) > 0:
+			header['If-None-Match'] = rss[3]	     #ETAG
+		response = await session.get(rss[1], headers = header)
+		print("response status=",response.status)
+		if response.status == 304:
+			print("no update for ", rss[1])
+		elif response.status == 200:
+			#print(response.headers)
+			if 'LAST-MODIFIED' in response.headers:
+				rss[2] = response.headers['LAST-MODIFIED']
+			else:
+				rss[2] = ""
+			if 'ETAG' in response.headers:
+				rss[3] = response.headers['ETAG']
+			else:
+				rss[3] = ""
+			body = await response.read()
+			soup = BeautifulSoup(body, 'lxml')
+			entries = soup.find_all('entry')
+			print (len(entries))
+			if 'reddit' in g_listRSS[1]:
+				process_reddit(entries)
+			elif 'vbparadise' in g_listRSS[1]:
+
+			elif 'github' in g_listRSS[1]:
+				process_github(entries)
+			
+	f = open(filenameRSS, "wt")
+	for line in g_listRSS:
+		f.write(','.join(line))
+	f.close()
+
+# functions which actrually parse the HTML and make the bot say the results
+async def process_reddit(bot, entries):
+	for entry in entries:
+		if is_updated(entry.find('updated').text):
+			postcat = entry.find('category')
+			#print(postcat)
+			strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
+			strSay += "**Title : " + entry.find('title').text + '**\n'
+			#print(entry.find('content').text)
+			postcontent = html.unescape(entry.find('content').text)
+			print(postcontent)
+			postcontent = BeautifulSoup(postcontent)
+			urlcontent = postcontent.find_all('a')
+			print(urlcontent)
+			for url in urlcontent:
+				if '[comments]' in url:
+					strSay += url['href'] + "\n"
+					break
+			await bot.say(strSay)
+
+async def process_github(bot, entries):
+	for entry in entries:
+		#print(entry)
+		if is_updated(entry.find('updated').text) :
+			strSay = "*New Commit at GitHub by " + entry.author.name.text + '*\n\n'
+			strSay += "**Title : " + entry.find('title').text + '**\n'
+			strSay += entry.find('link').text			
+			await bot.say(strSay)
+
+# updatedtime is in format like: 2016-11-11T12:38:34+00:00			
+def is_updated(updatedtime, backhours):  
+	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S+%z")
+	updated_insec = time.mktime(sttime)
+	current_insec = time.time() - backhours*360
+	
 #######################
 
 ##### Others  #########

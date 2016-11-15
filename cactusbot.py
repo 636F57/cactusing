@@ -77,7 +77,7 @@ async def feeda(number : int, category='favorite'):
 		number = 5
 	print("category = ", category)
 	strFile = "./Songs/" + category + ".txt"
-	open(strFile, "rt") as f:
+	with open(strFile, "rt") as f:
 		listSongs = f.readlines()
 		print("list length = ", len(listSongs))
 		for i in range(number):
@@ -197,14 +197,15 @@ async def ytf(text):
 @bot.command()
 async def rss_add_reddit(sub):
 	"""Specify the subreddit name. Add the subreddit to RSS check-list."""
-	with open(filenameRSS, "a+") as f:
-		lines = f.readlines()
-		max_index = 0
+	max_index = 0
+	with open(filenameRSS, "rt") as r:
+		lines = r.readlines()
 		if len(lines) > 0:
 			max_index = (lines[len(lines)-1].split(','))[0]
-		print("maxindex was ", max_index)
+	print("maxindex was ", max_index)
+	with open(filenameRSS, "a+") as f:
 		f.write(str(int(max_index)+1)+",https://www.reddit.com/r/"+sub+"/.rss,,\n")
-	await bot.say(url+" was added to RSS list.:cactus:")
+	await bot.say(sub+" was added to RSS list.:cactus:")
 
 @bot.command()
 async def rss_add_github(url):
@@ -212,12 +213,13 @@ async def rss_add_github(url):
 	if not 'github' in url:
 		await bot.say("It is not GitHub URL.")
 		return		
-	with open(filenameRSS, "a+") as f:
-		lines = f.readlines()
-		max_index = 0
+	max_index = 0
+	with open(filenameRSS, "rt") as r:
+		lines = r.readlines()
 		if len(lines) > 0:
 			max_index = (lines[len(lines)-1].split(','))[0]
-		print("maxindex was ", max_index)
+	print("maxindex was ", max_index)
+	with open(filenameRSS, "a+") as f:
 		if url[len(url)-1] != '/':
 			url += '/'
 		f.write(str(int(max_index)+1)+","+url+"commits/master.atom,,\n")
@@ -260,8 +262,10 @@ async def checkRSS(bot):
 	with open(filenameRSS, "rt") as f:
 		g_listRSS.clear()
 		for line in f:
-			g_listRSS.append(line.split(','))
-	
+			if len(line) > 1:
+				line = line.lower()
+				g_listRSS.append(line.strip().split(','))
+	print(g_listRSS)
 	if len(g_listRSS) == 0:
 		print("no RSS urls found.")
 		return
@@ -269,6 +273,7 @@ async def checkRSS(bot):
 	header = {'User-Agent':'CactusBot'}
 	
 	for rss in g_listRSS:
+		print("checking RSS of ", rss[1])
 		if len(rss[2]) > 0:
 			header['If-Modified-Since'] = rss[2]   #Last-Modified
 		if len(rss[3]) > 0:
@@ -290,17 +295,19 @@ async def checkRSS(bot):
 			body = await response.read()
 			soup = BeautifulSoup(body, 'lxml')
 			entries = soup.find_all('entry')
-			print (len(entries))
-			if 'reddit' in g_listRSS[1]:
-				process_reddit(bot, entries, g_interval)
-			elif 'vbparadise' in g_listRSS[1]:
+			if 'reddit' in rss[1]:
+				await process_reddit(bot, entries, g_interval)
+			#elif 'vbparadise' in g_listRSS[1]:
 
-			elif 'github' in g_listRSS[1]:
-				process_github(bot, entries, g_interval)
+			elif 'github' in rss[1]:
+				await process_github(bot, entries, g_interval)
+		else:
+			bot.say("Failed to get RSS feed from the server. " + rss[1])
 			
 	with open(filenameRSS, "wt") as f:
 		for line in g_listRSS:
-			f.write(','.join(line))
+			f.write(','.join(line) + "\n")
+			print(line)
 			
 	await asyncio.sleep(g_interval)
 
@@ -328,26 +335,29 @@ async def process_github(bot, entries, interval):
 	for entry in entries:
 		#print(entry)
 		if is_updated(entry.find('updated').text, interval) :
-			strSay = "*New Commit at GitHub by " + entry.author.name.text + '*\n\n'
+			author = entry.find('author')
+			strSay = "*New Commit at GitHub by " + author.find('name').text + '*\n\n'
 			strSay += "**Title : " + entry.find('title').text + '**\n'
-			strSay += entry.find('link').text			
+			strSay += entry.find('link')['href']		
 			await bot.say(strSay)
 
 # updatedtime should be in the format like: 2016-11-11T12:38:34+02:00			
 def is_updated(updatedtime, backhours):
+	print(updatedtime)
 	shiftsec = 0
-	if '+' in updatetime:
+	if '+' in updatedtime:
 		times = updatedtime.split('+')
 		updatedtime = times[0]
 		shifttimes = times[1].split(':')
 		shiftsec = int(shifttimes[0]) * 360 + int(shifttimes[1]) * 60
 	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
-	updated_insec = calendar.gmtime(sttime) - shiftsec
+	updated_insec = calendar.timegm(sttime) - shiftsec
 	since_insec = time.time() - backhours*360
+	print ("updated, since = ",updated_insec, since_insec)
 	if updated_insec < since_insec:
-		return false
-	else
-		return true
+		return False
+	else:
+		return True
 		
 #######################
 
@@ -415,7 +425,7 @@ try:
 except KeyboardInterrupt:
 	loop.run_until_complete(bot.logout())
 	# cancel all tasks lingering
-	tasks = asyncio.all_tasks(loop)
+	tasks = asyncio.Task.all_tasks(loop)
 	for task in tasks:
 		task.cancel()
 finally:

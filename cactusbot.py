@@ -11,7 +11,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 import asyncio
 import html
-import re
+import calendar
 
 if not discord.opus.is_loaded():      #this is needed for voice activities
 	discord.opus.load_opus('libopus-0.dll')
@@ -343,12 +343,22 @@ async def process_github(bot, entries):
 			strSay += entry.find('link').text			
 			await bot.say(strSay)
 
-# updatedtime is in format like: 2016-11-11T12:38:34+00:00			
-def is_updated(updatedtime, backhours):  
-	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S+%z")
-	updated_insec = time.mktime(sttime)
-	current_insec = time.time() - backhours*360
-	
+# updatedtime should be in the format like: 2016-11-11T12:38:34+02:00			
+def is_updated(updatedtime, backhours):
+	shiftsec = 0
+	if '+' in updatetime:
+		times = updatedtime.split('+')
+		updatedtime = times[0]
+		shifttimes = times[1].split(':')
+		shiftsec = int(shifttimes[0]) * 360 + int(shifttimes[1]) * 60
+	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
+	updated_insec = calendar.gmtime(sttime) - shiftsec
+	since_insec = time.time() - backhours*360
+	if updated_insec < since_insec:
+		return false
+	else
+		return true
+		
 #######################
 
 ##### Others  #########

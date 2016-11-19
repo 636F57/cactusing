@@ -27,10 +27,10 @@ fredboadPrefix = ";;play "
 marshmallowPrefix = ":request "
 
 #global variants for RSS
-g_listRSS = []
-filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag"\n  for each entry
+g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck"]
+filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck"\n  for each entry
 g_session = aiohttp.ClientSession()
-g_interval = 2
+#g_interval = 2
 		
 @bot.event
 async def on_ready():
@@ -194,17 +194,34 @@ async def ytf(text):
 #############################
 
 ####  For RSS utility   #####
+def read_rssfile():
+	global g_RSSdictkey
+	listRSSdict = []
+	with open(filenameRSS, "rt") as f:
+		for line in f:
+			if len(line) > 1:
+				line = line.lower()
+				listRSSdict.append(dict(zip(g_RSSdictkey, line.strip().split(','))))
+	return listRSSdict
+
+def max_index_of_rssfile():
+	max_index = 0
+	lines = read_rssfile()
+		if len(lines) > 0:
+			max_index = lines[len(lines)-1]["index"]  #assume the last entry always has the max index
+	return max_index
+
+def write_rssfile(listRSSdict):
+	with open(filenameRSS, "wt") as f:
+		for line in listRSSdict:
+			f.write(','.join(line.values) + "\n")
+			
+
 @bot.command()
 async def rss_add_reddit(sub):
 	"""Specify the subreddit name. Add the subreddit to RSS check-list."""
-	max_index = 0
-	with open(filenameRSS, "rt") as r:
-		lines = r.readlines()
-		if len(lines) > 0:
-			max_index = (lines[len(lines)-1].split(','))[0]
-	print("maxindex was ", max_index)
 	with open(filenameRSS, "a+") as f:
-		f.write(str(int(max_index)+1)+",https://www.reddit.com/r/"+sub+"/.rss,,\n")
+		f.write(str(int(max_index_of_rssfile())+1)+",https://www.reddit.com/r/"+sub+"/.rss,,,"+str(time.time())+"\n")
 	await bot.say(sub+" was added to RSS list.:cactus:")
 
 @bot.command()
@@ -213,108 +230,85 @@ async def rss_add_github(url):
 	if not 'github' in url:
 		await bot.say("It is not GitHub URL.")
 		return		
-	max_index = 0
-	with open(filenameRSS, "rt") as r:
-		lines = r.readlines()
-		if len(lines) > 0:
-			max_index = (lines[len(lines)-1].split(','))[0]
-	print("maxindex was ", max_index)
 	with open(filenameRSS, "a+") as f:
 		if url[len(url)-1] != '/':
 			url += '/'
-		f.write(str(int(max_index)+1)+","+url+"commits/master.atom,,\n")
+		f.write(str(int(max_index_of_rssfile())+1)+","+url+"commits/master.atom,,,"+str(time.time())+"\n")
 	await bot.say(url+" was added to RSS list.:cactus:")
 	
 @bot.command()
 async def rss_list():
 	"""List all the URLs of RSS check-list."""
-	with open(filenameRSS, "rt") as f:
-		lines = f.readlines()
-		if len(lines) == 0:
-			await bot.say("There is no URL in the list.")
-		for line in lines:
-			items = line.split(',')
-			await bot.say(items[0]+" : " + items[1])  #list index and URL
+	listRSSdict = read_rssfile()
+	if len(listRSSdict) == 0:
+		await bot.say("There is no URL in the list.")
+	for rss in listRSSdict:
+		await bot.say(rss["index"]+" : " + rss["url"])  #list index and URL
 	
 @bot.command()
 async def rss_del(index):
 	"""Delete the specified URL from RSS check-list."""
-	with open(filenameRSS, "rt") as f:
-		lines = f.readlines()
+	listRSSdict = read_rssfile()
 	output = []
-	for line in lines:
-		items = line.split(',')
-		if items[0] != index:
-			output.append(line)
-	with open(filenameRSS, "wt") as f:
-		for line in output:
-			f.write(line)
-	if len(output) < len(lines):
+	for rss in listRSSdict:
+		if rss["index"] != index:
+			output.append(rss)
+	write_rssfile(output)
+	if len(output) < len(listRSSdict):
 		await bot.say(index+" was deleted.")
 	else:
 		await bot.say(index+" was not found in the list.")
 
 # function that is called as a task to fetch and report RSS updates
 async def checkRSS(bot):
-	global g_listRSS
+	global g_RSSdictkey
 	global g_session
-	global g_interval
-	with open(filenameRSS, "rt") as f:
-		g_listRSS.clear()
-		for line in f:
-			if len(line) > 1:
-				line = line.lower()
-				g_listRSS.append(line.strip().split(','))
-	print(g_listRSS)
-	if len(g_listRSS) == 0:
+	listRSSdict = read_rssfile()
+	if len(listRSSdict) == 0:
 		print("no RSS urls found.")
 		return
 		
 	header = {'User-Agent':'CactusBot'}
 	
-	for rss in g_listRSS:
-		print("checking RSS of ", rss[1])
-		if len(rss[2]) > 0:
-			header['If-Modified-Since'] = rss[2]   #Last-Modified
-		if len(rss[3]) > 0:
-			header['If-None-Match'] = rss[3]	     #ETAG
-		response = await g_session.get(rss[1], headers = header)
+	for rss in listRSSdict:
+		print("checking RSS of ", rss["url"])
+		if len(rss["lastModified"]) > 0:
+			header['If-Modified-Since'] = rss["lastModified"]   #Last-Modified
+		if len(rss["eTag"]) > 0:
+			header['If-None-Match'] = rss["eTag"]	     		#ETAG
+		response = await g_session.get(rss["url"], headers = header)
 		print("response status=",response.status)
 		if response.status == 304:
-			print("no update for ", rss[1])
+			print("no update for ", rss["url"])
 		elif response.status == 200:
 			#print(response.headers)
 			if 'LAST-MODIFIED' in response.headers:
-				rss[2] = response.headers['LAST-MODIFIED']
+				rss["lastModified"] = response.headers['LAST-MODIFIED']
 			else:
-				rss[2] = ""
+				rss["lastModified"] = ""
 			if 'ETAG' in response.headers:
-				rss[3] = response.headers['ETAG']
+				rss["eTag"] = response.headers['ETAG']
 			else:
-				rss[3] = ""
+				rss["eTag"] = ""
 			body = await response.read()
 			soup = BeautifulSoup(body, 'lxml')
 			entries = soup.find_all('entry')
-			if 'reddit' in rss[1]:
-				await process_reddit(bot, entries, g_interval)
-			#elif 'vbparadise' in g_listRSS[1]:
-
-			elif 'github' in rss[1]:
-				await process_github(bot, entries, g_interval)
+			if 'reddit' in rss["url"]:
+				await process_reddit(bot, entries, rss["lastcheck"])
+			elif 'github' in rss["url"]:
+				await process_github(bot, entries, rss["lastcheck"])
 		else:
-			bot.say("Failed to get RSS feed from the server. " + rss[1])
-			
-	with open(filenameRSS, "wt") as f:
-		for line in g_listRSS:
-			f.write(','.join(line) + "\n")
-			print(line)
-			
+			bot.say("Failed to get RSS feed from the server. " + rss["url"])
+		rss["lastcheck"] = time.time()
+		
+	write_rssfile(g_listRSS)
+	
 	await asyncio.sleep(g_interval)
 
 # functions which actrually parse the HTML and make the bot say the results
-async def process_reddit(bot, entries, interval):
+async def process_reddit(bot, entries, lastcheck):
 	for entry in entries:
-		if is_updated(entry.find('updated').text, interval):
+		if is_updated(entry.find('updated').text, lastcheck):
 			postcat = entry.find('category')
 			#print(postcat)
 			strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
@@ -331,10 +325,10 @@ async def process_reddit(bot, entries, interval):
 					break
 			await bot.say(strSay)
 
-async def process_github(bot, entries, interval):
+async def process_github(bot, entries, lastcheck):
 	for entry in entries:
 		#print(entry)
-		if is_updated(entry.find('updated').text, interval) :
+		if is_updated(entry.find('updated').text, lastcheck) :
 			author = entry.find('author')
 			strSay = "*New Commit at GitHub by " + author.find('name').text + '*\n\n'
 			strSay += "**Title : " + entry.find('title').text + '**\n'
@@ -342,7 +336,7 @@ async def process_github(bot, entries, interval):
 			await bot.say(strSay)
 
 # updatedtime should be in the format like: 2016-11-11T12:38:34+02:00			
-def is_updated(updatedtime, backhours):
+def is_updated(updatedtime, lastcheck):
 	print(updatedtime)
 	shiftsec = 0
 	if '+' in updatedtime:
@@ -352,9 +346,8 @@ def is_updated(updatedtime, backhours):
 		shiftsec = int(shifttimes[0]) * 360 + int(shifttimes[1]) * 60
 	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
 	updated_insec = calendar.timegm(sttime) - shiftsec
-	since_insec = time.time() - backhours*360
-	print ("updated, since = ",updated_insec, since_insec)
-	if updated_insec < since_insec:
+	print ("updated, since = ",updated_insec, lastcheck)
+	if updated_insec < lastcheck:
 		return False
 	else:
 		return True

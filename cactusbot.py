@@ -1,5 +1,6 @@
-### NOTE: This is based on the example file "basic_bot.py" included in the discord.py project.
-###  (https://github.com/Rapptz/discord.py/blob/master/examples/basic_bot.py)
+# Copyright (c) 2016 636F57@GitHub
+# This software is released under an MIT license.
+# See LICENSE for full details.
 
 import discord
 from discord.ext import commands
@@ -13,8 +14,9 @@ import asyncio
 import html
 import calendar
 from cactusconsts import CactusConsts
+import traceback
 
-if not discord.opus.is_loaded():      #this is needed for voice activities
+if not discord.opus.is_loaded():      #this is necessary for voice activities
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
 
@@ -29,8 +31,8 @@ fredboadPrefix = ";;play "
 marshmallowPrefix = ":request "
 
 #global variants for RSS
-g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck"]
-filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck"\n  for each entry
+g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck", "channel_ID"]
+filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck","channel_ID"\n  for each entry
 g_session = aiohttp.ClientSession()
 g_intervalhours = 0.1 # short interval for test
 		
@@ -50,7 +52,10 @@ async def on_message(message):
 		print("message by Mee6")
 		if len(g_listEcho) > 0:
 			print(message.content)
-			if 'youtu' in message.content:
+			if CactusConsts.Mee6_notfound_msg in message.content:
+				print("canceling 1 echo")
+				g_listEcho.pop(0)
+			elif 'youtu' in message.content:
 				print("in echo")
 				await bot.send_message(message.channel, g_listEcho[0] + message.content)
 				g_listEcho.pop(0)
@@ -196,6 +201,16 @@ async def ytf(text):
 #############################
 
 ####  For RSS utility   #####
+# return the channel ID of the given name in the server
+# return "" when not found
+def get_channel_ID(bot, server_ID, channel_name):
+	if channel_name == "":
+		return ""
+	for channel in bot.get_server(server_ID).channels:
+		if channel.name == channel_name:
+			return channel.id
+	return ""
+	
 def read_rssfile():
 	global g_RSSdictkey
 	listRSSdict = []
@@ -214,39 +229,60 @@ def max_index_of_rssfile():
 	return max_index
 
 def write_rssfile(listRSSdict):
+	global g_RSSdictkey
 	with open(filenameRSS, "wt") as f:
 		for rss in listRSSdict:
-			f.write(','.join(rss.values()) + "\n")
+			line = ""
+			for key in g_RSSdictkey:
+				line += str(rss[key]) + ","
+			f.write(line[:-1]+"\n")
 		print("successfully wrote listRSSdict to the file.")
 	return
 
-@bot.command()
-async def rss_add_reddit(sub):
-	"""Specify the subreddit name. Add the subreddit to RSS check-list."""
+@bot.command(pass_context=True)
+async def rss_add_reddit(ctx):
+	"""Specify the subreddit name and channel name. Add the subreddit to RSS check-list."""
+	command,sub,channel_name = ctx.message.content.split(' ')
+	line = str(int(max_index_of_rssfile())+1)+",https://www.reddit.com/r/"+ sub +"/.rss,,,"+str(int(time.time()))
+	channelID = get_channel_ID(bot, ctx.message.server.id, channel_name)
+	print("CACTUS ROOMS SERVER ID:",ctx.message.server.id)
+	if channelID == "":
+		channelID = ctx.message.channel.id
+	line += ","+ channelID + "\n"
 	with open(filenameRSS, "a+") as f:
-		f.write(str(int(max_index_of_rssfile())+1)+",https://www.reddit.com/r/"+sub+"/.rss,,,"+str(int(time.time()))+"\n")
-	await bot.say(sub+" was added to RSS list.:cactus:")
+		f.write(line)
+	await bot.say(":cactus:"+sub+" was added to RSS list.:cactus:")
 
-@bot.command()
-async def rss_add_github(url):
-	"""Specify the URL of github repo. Add the repo to RSS check-list."""
+@bot.command(pass_context=True)
+async def rss_add_github(ctx):
+	"""Specify github repo URL and channel name. Add the repo to RSS check-list."""
+	command,url,channel_name = ctx.message.content.split(' ')
 	if not 'github' in url:
 		await bot.say("It is not GitHub URL.")
 		return		
 	with open(filenameRSS, "a+") as f:
 		if url[len(url)-1] != '/':
 			url += '/'
-		f.write(str(int(max_index_of_rssfile())+1)+","+url+"commits/master.atom,,,"+str(int(time.time()))+"\n")
-	await bot.say(url+" was added to RSS list.:cactus:")
+		line = str(int(max_index_of_rssfile())+1)+","+url+"commits/master.atom,,,"+str(int(time.time()))
+		channelID = get_channel_ID(bot, ctx.message.server.id, channel_name)
+		if channelID == "":
+			channelID = ctx.message.channel.id
+		line += ","+ channelID + "\n"
+		f.write(line)
+	await bot.say(":cactus:"+url+" was added to RSS list.:cactus:")
 	
-@bot.command()
-async def rss_list():
+@bot.command(pass_context=True)
+async def rss_list(ctx):
 	"""List all the URLs of RSS check-list."""
+	if ctx.message.author.id != ctx.message.server.owner.id:
+		await bot.say("Sorry, this is allowed to the server owner only.:cry:")
+		return
 	listRSSdict = read_rssfile()
 	if len(listRSSdict) == 0:
 		await bot.say("There is no URL in the list.")
 	for rss in listRSSdict:
-		await bot.say(rss["index"]+" : " + rss["url"])  #list index and URL
+		channel_name = bot.get_channel(rss["channel_ID"]).name
+		await bot.say(rss["index"]+" : " + rss["url"] +" to #" + channel_name)  #list index, URL, and channel to cat
 	
 @bot.command()
 async def rss_del(index):
@@ -273,53 +309,56 @@ async def checkRSS(bot):
 			listRSSdict = read_rssfile()
 			if len(listRSSdict) == 0:
 				print("no RSS urls found.")
-				return
+			else:				
+				header = {'User-Agent':CactusConsts.UserAgentName}
 				
-			header = {'User-Agent':'CactusBot'}
-			
-			for rss in listRSSdict:
-				print("checking RSS of ", rss["url"])
-				if len(rss["lastModified"]) > 0:
-					header['If-Modified-Since'] = rss["lastModified"]   #Last-Modified
-				if len(rss["eTag"]) > 0:
-					header['If-None-Match'] = rss["eTag"]	     		#ETAG
-				response = await g_session.get(rss["url"], headers = header)
-				print("response status=",response.status)
-				if response.status == 304:
-					print("no update for ", rss["url"])
-				elif response.status == 200:
-					await bot.say("now processing RSS data...")
-					#print(response.headers)
-					if 'LAST-MODIFIED' in response.headers:
-						rss["lastModified"] = response.headers['LAST-MODIFIED']
-					else:
-						rss["lastModified"] = ""
-					if 'ETAG' in response.headers:
-						rss["eTag"] = response.headers['ETAG']
-					else:
-						rss["eTag"] = ""
-					body = await response.read()
-					soup = BeautifulSoup(body, 'lxml')
-					entries = soup.find_all('entry')
-					if 'reddit' in rss["url"]:
-						await process_reddit(bot, entries, rss["lastcheck"])
-					elif 'github' in rss["url"]:
-						await process_github(bot, entries, rss["lastcheck"])
-				else:
-					bot.say("Failed to get RSS feed from the server. " + rss["url"])
-				rss["lastcheck"] = time.time()
-				
+				for rss in listRSSdict:
+					rss_backup = rss
+					try:
+						print("checking RSS of ", rss["url"])
+						if len(rss["lastModified"]) > 0:
+							header['If-Modified-Since'] = rss["lastModified"]   #Last-Modified
+						if len(rss["eTag"]) > 0:
+							header['If-None-Match'] = rss["eTag"]	     		#ETAG
+						response = await g_session.get(rss["url"], headers = header)
+						print("response status=",response.status)
+						if response.status == 304:
+							print("no update for ", rss["url"])
+						elif response.status == 200:
+							#print(response.headers)
+							if 'LAST-MODIFIED' in response.headers:
+								rss["lastModified"] = response.headers['LAST-MODIFIED']
+							else:
+								rss["lastModified"] = ""
+							if 'ETAG' in response.headers:
+								rss["eTag"] = response.headers['ETAG']
+							else:
+								rss["eTag"] = ""
+							body = await response.read()
+							soup = BeautifulSoup(body, 'lxml')
+							entries = soup.find_all('entry')
+							if 'reddit' in rss["url"]:
+								await process_reddit(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
+							elif 'github' in rss["url"]:
+								await process_github(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
+						else:
+							await bot.say("Failed to get RSS feed from the server. " + rss["url"])
+						rss["lastcheck"] = int(time.time())
+					except:
+						rss = rss_backup
+						print("error in checkRSS:",rss["url"])
+						print(traceback.format_exc())
 			write_rssfile(listRSSdict)		
 			await asyncio.sleep(g_intervalhours*3600)
 		await asyncio.sleep(30) #wait 30 seconds then retry
 
 # functions which actrually parse the HTML and make the bot say the results
-async def process_reddit(bot, entries, lastcheck):
+async def process_reddit(bot, entries, lastcheck, channel):
 	for entry in entries:
 		if is_updated(entry.find('updated').text, lastcheck):
 			postcat = entry.find('category')
 			#print(postcat)
-			strSay = "*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*\n\n'
+			strSay = ":cactus:*New Post at " + postcat['term'] + ' (' + postcat['label'] + ')*:cactus:\n\n'
 			strSay += "**Title : " + entry.find('title').text + '**\n'
 			#print(entry.find('content').text)
 			postcontent = html.unescape(entry.find('content').text)
@@ -332,18 +371,18 @@ async def process_reddit(bot, entries, lastcheck):
 					strSay += url['href'] + "\n"
 					break
 			print(strSay)
-			await bot.say(strSay)
+			await bot.send_message(channel, strSay)
 
-async def process_github(bot, entries, lastcheck):
+async def process_github(bot, entries, lastcheck, channel):
 	for entry in entries:
 		#print(entry)
 		if is_updated(entry.find('updated').text, lastcheck) :
 			author = entry.find('author')
-			strSay = "*New Commit at GitHub by " + author.find('name').text + '*\n\n'
+			strSay = ":cactus:*New Commit at GitHub by " + author.find('name').text + '*:cactus:\n\n'
 			strSay += "**Title : " + entry.find('title').text + '**\n'
 			strSay += entry.find('link')['href']
 			print(strSay)
-			await bot.say(strSay)
+			await bot.send_message(channel, strSay)
 
 # updatedtime should be in the format like: 2016-11-11T12:38:34+02:00
 # lastcheck is the string which is stored in RSSfile		
@@ -371,54 +410,6 @@ async def test():
 	"""command for test and debug"""
 	await bot.say("RSS test started.")
 	await checkRSS(bot)
-	
-
-	
-@bot.command()
-async def add(left : int, right : int):
-	"""Adds two numbers together."""
-	await bot.say(left + right)
-
-@bot.command()
-async def roll(dice : str):
-	"""Rolls a dice in NdN format."""
-	try:
-		rolls, limit = map(int, dice.split('d'))
-	except Exception:
-		await bot.say('Format has to be in NdN!')
-		return
-
-	result = ', '.join(str(random.randint(1, limit)) for r in range(rolls))
-	await bot.say(result)
-
-@bot.command(description='For when you wanna settle the score some other way')
-async def choose(*choices : str):
-	"""Chooses between multiple choices."""
-	await bot.say(random.choice(choices))
-
-@bot.command()
-async def repeat(times : int, content='repeating...'):
-	"""Repeats a message multiple times."""
-	for i in range(times):
-		await bot.say(content)
-
-@bot.command()
-async def joined(member : discord.Member):
-	"""Says when a member joined."""
-	await bot.say('{0.name} joined in {0.joined_at}'.format(member))
-
-@bot.group(pass_context=True)
-async def cool(ctx):
-	"""Says if a user is cool.
-	In reality this just checks if a subcommand is being invoked.
-	"""
-	if ctx.invoked_subcommand is None:
-		await bot.say('No, {0.subcommand_passed} is not cool'.format(ctx))
-
-@cool.command(name='bot')
-async def _bot():
-	"""Is the bot cool?"""
-	await bot.say('Yes, the bot is cool.')
 
 ######################################
 

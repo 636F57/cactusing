@@ -31,8 +31,8 @@ fredboadPrefix = ";;play "
 marshmallowPrefix = ":request "
 
 #global variants for RSS
-g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck", "channel_ID"]
-filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck","channel_ID"\n  for each entry
+g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck", "channel_ID", "userID"]
+filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck","channel_ID","userID"\n  for each entry
 g_session = aiohttp.ClientSession()
 g_intervalhours = 0.5 # RSS check interval in hours
 		
@@ -273,20 +273,22 @@ async def rss_add_github(ctx):
 	
 @bot.command(pass_context=True)
 async def rss_list(ctx):
-	"""List all the URLs of RSS check-list."""
-	if ctx.message.author.id != ctx.message.server.owner.id:
-		await bot.say("Sorry, this is allowed to the server owner only.:cry:")
-		return
+	"""List all the RSS URLs requested by you."""
+	bAll = False
+	# only server owner can see all the URLs in the list
+	if ctx.message.author.id == ctx.message.server.owner.id:
+		bAll = True
 	listRSSdict = read_rssfile()
 	if len(listRSSdict) == 0:
 		await bot.say("There is no URL in the list.")
 	for rss in listRSSdict:
-		channel_name = bot.get_channel(rss["channel_ID"]).name
-		await bot.say(rss["index"]+" : " + rss["url"] +" to #" + channel_name)  #list index, URL, and channel to cat
-	
+		if bAll or ctx.message.author.id == rss["userID"]:
+			channel_name = bot.get_channel(rss["channel_ID"]).name
+			await bot.say(rss["index"]+" : " + rss["url"] +" to #" + channel_name)  #list index, URL, and channel to cat
+		
 @bot.command()
 async def rss_del(index):
-	"""Delete the specified URL from RSS check-list."""
+	"""Delete the specified index entry from RSS check-list."""
 	listRSSdict = read_rssfile()
 	output = []
 	for rss in listRSSdict:
@@ -324,6 +326,7 @@ async def checkRSS(bot):
 						print("response status=",response.status)
 						if response.status == 304:
 							print("no update for ", rss["url"])
+							response.close()
 						elif response.status == 200:
 							#print(response.headers)
 							if 'LAST-MODIFIED' in response.headers:
@@ -379,7 +382,7 @@ async def process_github(bot, entries, lastcheck, channel):
 		if is_updated(entry.find('updated').text, lastcheck) :
 			author = entry.find('author')
 			strSay = ":cactus:*New Commit at GitHub by " + author.find('name').text + '*:cactus:\n\n'
-			strSay += "**Title : " + entry.find('title').text + '**\n'
+			strSay += "**Comment : " + entry.find('title').text + '**\n'
 			strSay += entry.find('link')['href']
 			print(strSay)
 			await bot.send_message(channel, strSay)

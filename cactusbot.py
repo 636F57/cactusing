@@ -34,7 +34,7 @@ marshmallowPrefix = ":request "
 g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck", "channel_ID"]
 filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck","channel_ID"\n  for each entry
 g_session = aiohttp.ClientSession()
-g_intervalhours = 0.1 # short interval for test
+g_intervalhours = 0.5 # RSS check interval in hours
 		
 @bot.event
 async def on_ready():
@@ -393,7 +393,7 @@ def is_updated(updatedtime, lastcheck):
 		times = updatedtime.split('+')
 		updatedtime = times[0]
 		shifttimes = times[1].split(':')
-		shiftsec = int(shifttimes[0]) * 360 + int(shifttimes[1]) * 60
+		shiftsec = int(shifttimes[0]) * 3600 + int(shifttimes[1]) * 60
 	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
 	updated_insec = calendar.timegm(sttime) - shiftsec
 	print ("updated, since = ",updated_insec, lastcheck)

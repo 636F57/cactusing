@@ -1,4 +1,9 @@
+# Copyright (c) 2016 636F57@GitHub
+# This software is released under an MIT license.
+# See LICENSE for full details.
+
 import discord 
+import asyncio
 from slackclient import SlackClient
 from cactusconsts import CactusConsts
 
@@ -6,8 +11,8 @@ if not discord.opus.is_loaded():
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
 
-CACTUSING_ID = cactusconsts.CACTUSING_ID
-CactusBot_ID = cactusconsts.CactusBot_ID
+CACTUSING_ID = CactusConsts.CACTUSING_ID
+CactusBot_ID = CactusConsts.CactusBot_ID
 
 client = discord.Client()
 
@@ -33,15 +38,16 @@ async def set_status_string(client):
 		if len(strStatus) > 0:
 			strStatus += ", "
 		strStatus += "SlackChat"
-	await client.change_presence(game=discord.Game(name=strStatus),status=discord.Status.idle)
+	await client.change_presence(game=discord.Game(name=strStatus),status=discord.Status.online)
 
 def get_slack_channel_name(channel_ID):
 	global g_slack_channel_list
 	if len(g_slack_channel_list) == 0:
 		g_slack_channel_list = g_slack.api_call("channels.list")
+		#print(g_slack_channel_list)
 	chan = "?"
 	for channel in g_slack_channel_list['channels']:
-		if channel['id'] == channel_ID
+		if channel['id'] == channel_ID:
 			chan = channel['name']
 			break
 	return chan		
@@ -49,10 +55,11 @@ def get_slack_channel_name(channel_ID):
 def get_slack_user_name(user_ID):
 	global g_slack_user_list
 	if len(g_slack_user_list) == 0:
-		g_slack_user_list = g_slack.api_call("channels.list")
+		g_slack_user_list = g_slack.api_call("users.list")
+		#print(g_slack_user_list)
 	name = "?"
-	for user in g_slack_user_list['users']:
-		if user['id'] == user_ID
+	for user in g_slack_user_list['members']:
+		if user['id'] == user_ID:
 			name = user['name']
 			break
 	return name		
@@ -61,15 +68,28 @@ def get_slack_user_name(user_ID):
 async def realtime_slack(client):
 	global g_bSlackChatOn
 	global g_strSlackChannel_ID
-	while g_bSlackChatOn:
-		if g_slack.rtm_connect():
-			dicRes = g_slack.rtm_read()
-			if dicRes['type'] == 'message':            # support only message for now
-				strMsg = get_slack_user_name(dicRes['user'])+"said in "+get_slack_channel_name(dicRes['channel'])+" : "+dicRes['text']
-				await client.send_message(client.get_channel(g_strSlackChannel_ID), strMsg)  
+	while True:
+		if g_bSlackChatOn:
+			if g_slack.rtm_connect():
+				while g_bSlackChatOn:
+					try:
+						listRes = g_slack.rtm_read()
+						#print(listRes)
+						for dic in listRes:
+							if dic['type'] == 'message':            # support only message for now
+								user = get_slack_user_name(dic['user'])
+								channame = get_slack_channel_name(dic['channel'])
+								print("user:",user,"in", channame)
+								strMsg = "**" + user + "**" + " said in *#" + channame + "* :\n" + dic['text']
+								await client.send_message(client.get_channel(g_strSlackChannel_ID), strMsg)  
+					finally:
+						await asyncio.sleep(5)
+			else:
+				print("rtm connection failed")
+				await client.send_message(client.get_channel(g_strSlackChannel_ID), "Connection failed.")
+				await asyncio.sleep(30)
 		else:
-			await client.send_message(client.get_channel(g_strSlackChannel_ID), "Connection failed.")
-		time.sleep(2)
+			await asyncio.sleep(30)
 
 ##############################################################
 # events 
@@ -78,7 +98,7 @@ async def realtime_slack(client):
 async def on_message(message):	
 	print("on message : ", message.content, message.author.name, message.author.id)
 	global g_bShouldEcho
-	global g_bSlack
+	global g_bSlackChatOn
 	global g_strPrefix
 	
 	### prefix + "echo" : toggle echoing CactusBot ###
@@ -115,43 +135,42 @@ async def on_message(message):
 		await client.send_message(message.channel, ":music play")
 	
 	### prefix + "repeat" : repeat the sentence ###
-	if message.content.casefold().startwith((g_strPrefix+"repeat").casefold()):
-		await client.send_message(message.channel, message.content[6:])
+	if message.content.casefold().startswith((g_strPrefix+"repeat").casefold()):
+		await client.send_message(message.channel, message.content[8:])
 	
 	### prefix + "slackchat_start" : start syncing with Slack ###
-	if message.content.casefold() == (g_strPrefix+"slack_start").casefold():
+	if message.content.casefold() == (g_strPrefix+"slackchat_start").casefold():
 		if g_bSlackChatOn:
 			await client.send_message(message.channel, "It's already connected to Slack. :slight_smile:")
 			return
 		else:
 			g_bSlackChatOn = True
-			set_status_string(client)
+			await set_status_string(client)
 			await client.send_message(message.channel, "Syncing with Slack started. :slight_smile:")
 	
 	### prefix + "slackchat_end" : end syncing with Slack ###
-	if message.content.casefold() == (g_strPrefix+"slack_end").casefold():
+	if message.content.casefold() == (g_strPrefix+"slackchat_end").casefold():
 		if g_bSlackChatOn == False:
 			await client.send_message(message.channel, "It's already disconnected from Slack. :slight_smile:")
 			return
 		else:
 			g_bSlackChatOn = False
-			set_status_string(client)
+			await set_status_string(client)
 			await client.send_message(message.channel, "Syncing with Slack ended. :slight_smile:")
 
 	### prefix + "s" : send message to Slack ###
-	if message.content.casefold().startwith((g_strPrefix+"s ").casefold()):
-		g_slack.api_call("chat.postMessage", channel="#test", text=message.content[2:])
+	if message.content.casefold().startswith((g_strPrefix+"s ").casefold()):
+		g_slack.api_call("chat.postMessage", channel="#test", text=message.content[3:])
 
-	### 
-	if message.content.casefold() == (g_strPrefix+"createinvite").casefold():
-		invite = client.create_invite(destination = message.channel, xkcd = True, max_uses = 1)
-		if invite is not None:
-			client.send_message(message.channel, "Invite is:\n{}\nThe invite can only be used once.".format(invite.url))
-		else:
-			client.send_message(message.channel, "Unable to create invite. Sorry for the inconvenience.")
+	### prefix + "whois" : print username from userID of Slack ###
+	if message.content.casefold().startswith((g_strPrefix+"whois").casefold()):
+		await cleient.send_message(message.channel, get_slack_user_name(message.content[7:]))
+		
+		
 
 @client.event
 async def on_ready():
+	global g_strSlackChannel_ID
 	print('Logged in as')
 	print(client.user.name)
 	print(client.user.id)
@@ -168,6 +187,7 @@ async def on_ready():
 				break
 		else:
 			print("Failed to set slack output channel.")
+	await set_status_string(client)
 			
 ######################################
 
@@ -185,9 +205,7 @@ except KeyboardInterrupt:
 		task.cancel()
 finally:
 	loop.close()
-	if g_session:
-		g_session.close()
-
+	
 
 
 

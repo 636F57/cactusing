@@ -16,12 +16,12 @@ CactusBot_ID = CactusConsts.CactusBot_ID
 
 client = discord.Client()
 
-g_slack = SlackClient(CactusConsts.Slack_Token)
+g_slack = SlackClient(CactusConsts.Slack_bot_Token)
 
 g_bShouldEcho = True
 g_bSlackChatOn = False
 g_strPrefix = "%"
-g_strSlackChannel_ID = CactusConsts.Slack_Channel_ID
+g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
 g_slack_user_list = {}
 
@@ -45,6 +45,7 @@ def get_slack_channel_name(channel_ID):
 	if len(g_slack_channel_list) == 0:
 		g_slack_channel_list = g_slack.api_call("channels.list")
 		#print(g_slack_channel_list)
+		#g_slack.api_call("channels.join", channel=CactusConsts.slack_test_channelID)
 	chan = "?"
 	for channel in g_slack_channel_list['channels']:
 		if channel['id'] == channel_ID:
@@ -67,26 +68,30 @@ def get_slack_user_name(user_ID):
 					
 async def realtime_slack(client):
 	global g_bSlackChatOn
-	global g_strSlackChannel_ID
+	global g_discord_SlackChannel_ID
 	while True:
 		if g_bSlackChatOn:
 			if g_slack.rtm_connect():
 				while g_bSlackChatOn:
 					try:
 						listRes = g_slack.rtm_read()
-						#print(listRes)
+						print(listRes)
 						for dic in listRes:
-							if dic['type'] == 'message':            # support only message for now
-								user = get_slack_user_name(dic['user'])
+							if ('type' in dic) and (dic['type'] == 'message'):            # support only message for now
+								user = "?"
+								if 'user' in dic:
+									user = get_slack_user_name(dic['user'])
+								elif 'username' in dic:
+									user = dic['username']
 								channame = get_slack_channel_name(dic['channel'])
 								print("user:",user,"in", channame)
 								strMsg = "**" + user + "**" + " said in *#" + channame + "* :\n" + dic['text']
-								await client.send_message(client.get_channel(g_strSlackChannel_ID), strMsg)  
+								await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg)  
 					finally:
 						await asyncio.sleep(5)
 			else:
 				print("rtm connection failed")
-				await client.send_message(client.get_channel(g_strSlackChannel_ID), "Connection failed.")
+				await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Connection failed.")
 				await asyncio.sleep(30)
 		else:
 			await asyncio.sleep(30)
@@ -160,7 +165,10 @@ async def on_message(message):
 
 	### prefix + "s" : send message to Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"s ").casefold()):
-		g_slack.api_call("chat.postMessage", channel="#test", text=message.content[3:])
+		if g_bSlackChatOn:
+			g_slack.rtm_send_message(message.content[3:], "#test")
+		else:
+			g_slack.api_call("chat.postMessage", channel="#test", text=message.content[3:])
 
 	### prefix + "whois" : print username from userID of Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"whois").casefold()):
@@ -170,20 +178,20 @@ async def on_message(message):
 
 @client.event
 async def on_ready():
-	global g_strSlackChannel_ID
+	global g_discord_SlackChannel_ID
 	print('Logged in as')
 	print(client.user.name)
 	print(client.user.id)
-	if len(g_strSlackChannel_ID) == 0:
+	if len(g_discord_SlackChannel_ID) == 0:
 		for server in client.servers:
 			if server.name == CactusConsts.Server_Name:
 				for channel in server.channels:
 					if channel.name.casefold() == ("slack").casefold():
-						g_strSlackChannel_ID = channel.id
-						print("slack channel ID: ", g_strSlackChannel_ID)  # better to add to CactusConsts
+						g_discord_SlackChannel_ID = channel.id
+						print("slack channel ID: ", g_discord_SlackChannel_ID)  # better to add to CactusConsts
 						break
 				else:
-					g_strSlackChannel_ID = server.default_channel.id
+					g_discord_SlackChannel_ID = server.default_channel.id
 				break
 		else:
 			print("Failed to set slack output channel.")

@@ -20,7 +20,7 @@ if not discord.opus.is_loaded():      #this is necessary for voice activities
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
 
-description = '''Utility Bot custom-made for this CACTUS ROOMS server. :cactus:'''
+description = '''Utility Bot custom-made for this server. :cactus:'''
 bot = commands.Bot(command_prefix='#', description=description)
 	
 #global variants for music
@@ -326,7 +326,6 @@ async def checkRSS(bot):
 						print("response status=",response.status)
 						if response.status == 304:
 							print("no update for ", rss["url"])
-							response.close()
 						elif response.status == 200:
 							#print(response.headers)
 							if 'LAST-MODIFIED' in response.headers:
@@ -346,6 +345,7 @@ async def checkRSS(bot):
 								await process_github(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
 						else:
 							await bot.say("Failed to get RSS feed from the server. " + rss["url"])
+						response.close()
 						rss["lastcheck"] = int(time.time())
 					except:
 						rss = rss_backup

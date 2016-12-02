@@ -24,6 +24,7 @@ g_strPrefix = "%"
 g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
 g_slack_user_list = {}
+g_slack_chat_channel = "test"
 
 ##############################################################
 # utils
@@ -52,6 +53,17 @@ def get_slack_channel_name(channel_ID):
 			chan = channel['name']
 			break
 	return chan		
+
+def get_slack_channel_ID(channel_name):
+	global g_slack_channel_list
+	if len(g_slack_channel_list) == 0:
+		g_slack_channel_list = g_slack.api_call("channels.list")
+	chan = 0
+	for channel in g_slack_channel_list['channels']:
+		if channel['name'] == channel_name:
+			chan = channel['id']
+			break
+	return chan	
 	
 def get_slack_user_name(user_ID):
 	global g_slack_user_list
@@ -75,18 +87,22 @@ async def realtime_slack(client):
 				while g_bSlackChatOn:
 					try:
 						listRes = g_slack.rtm_read()
-						print(listRes)
+						if len(listRes)>0:
+							print(listRes)
 						for dic in listRes:
-							if ('type' in dic) and (dic['type'] == 'message'):            # support only message for now
-								user = "?"
-								if 'user' in dic:
-									user = get_slack_user_name(dic['user'])
-								elif 'username' in dic:
-									user = dic['username']
-								channame = get_slack_channel_name(dic['channel'])
-								print("user:",user,"in", channame)
-								strMsg = "**" + user + "**" + " said in *#" + channame + "* :\n" + dic['text']
-								await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg)  
+							if 'type' in dic:
+								if dic['type'] == 'hello':
+									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready.")
+								elif dic['type'] == 'message':            # support only message for now
+									user = "?"
+									if 'user' in dic:
+										user = get_slack_user_name(dic['user'])
+									elif 'username' in dic:
+										user = dic['username']
+									channame = get_slack_channel_name(dic['channel'])
+									print("user:",user,"in", channame)
+									strMsg = "**" + user + "**" + " said in *#" + channame + "* :\n" + dic['text']
+									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg)  
 					finally:
 						await asyncio.sleep(5)
 			else:
@@ -101,10 +117,11 @@ async def realtime_slack(client):
 
 @client.event
 async def on_message(message):	
-	print("on message : ", message.content, message.author.name, message.author.id)
+	#print("on message : ", message.content, message.author.name, message.author.id)
 	global g_bShouldEcho
 	global g_bSlackChatOn
 	global g_strPrefix
+	global g_slack_chat_channel
 	
 	### prefix + "echo" : toggle echoing CactusBot ###
 	if message.content.casefold() ==  (g_strPrefix+"echo").casefold():
@@ -166,10 +183,19 @@ async def on_message(message):
 	### prefix + "s" : send message to Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"s ").casefold()):
 		if g_bSlackChatOn:
-			g_slack.rtm_send_message(message.content[3:], "#test")
+			g_slack.rtm_send_message(g_slack_chat_channel, message.content[3:])
 		else:
-			g_slack.api_call("chat.postMessage", channel="#test", text=message.content[3:])
+			g_slack.api_call("chat.postMessage", channel="#"+g_slack_chat_channel, text=message.content[3:])
 
+	### prefix + "s_channel" : change the Slack channel to send messages ###
+	if message.content.casefold().startswith((g_strPrefix+"s_channel").casefold()):
+		channel_name = message.content[11:].strip()
+		print(channel_name)
+		if get_slack_channel_ID(channel_name) == 0:
+			await client.send_message(message.channel, "No such channel was found. :cry:")
+		else:
+			g_slack_chat_channel = channel_name
+		
 	### prefix + "whois" : print username from userID of Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"whois").casefold()):
 		await cleient.send_message(message.channel, get_slack_user_name(message.content[7:]))

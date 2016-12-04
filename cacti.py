@@ -82,14 +82,14 @@ def get_slack_user_name(user_ID):
 	
 # ts should be total sec since epoch time, like "1480832827.000006" as string
 def format_time_output(ts):
-	return 	time.strftime("%Y/%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
+	return 	time.strftime("%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
 	
 # format and output dectionary type response from slack to discord channel
 async def slack_output(client, dic):
 	global g_discord_SlackChannel_ID
 	if 'type' in dic:
 		strMsg = ""
-		if dic['type'] == 'message':            # support only message for now
+		if dic['type'] == 'message':            
 			user = "?"
 			if 'user' in dic:
 				user = get_slack_user_name(dic['user'])
@@ -98,21 +98,25 @@ async def slack_output(client, dic):
 			channame = get_slack_channel_name(dic['channel'])
 			tm = format_time_output(dic['ts'])
 			print("user:",user,"in", channame, "at", tm)
-			strMsg = "**" + user + "**" + " said in *#" + channame + "* at " + tm + " :\n" + dic['text']
+			strMsg = "**" + user + "**" + " said in *#" + channame + "* at __" + tm + "__ :\n" + dic['text']
 		elif dic['type'] == 'presence_change':
-			tm = "?"
-			if 'ts' in dic:
-				tm = format_time_output(dic['ts'])
-			strMsg = "**" + get_slack_user_name(dic['user']) + "** went **" + dic['presence'] + "** at " + tm		
+			strMsg = "**" + get_slack_user_name(dic['user']) + "** is now **" + dic['presence'] + "**"		
 		if len(strMsg) > 0:
 			await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg) 
 		
 async def realtime_slack(client):
 	global g_bSlackChatOn
 	global g_discord_SlackChannel_ID
+	global g_slack_user_list
 	while True:
 		if g_bSlackChatOn:
 			if g_slack.rtm_connect():
+				if len(g_slack_user_list) == 0:
+					g_slack_user_list = g_slack.api_call("users.list")
+				for user in g_slack_user_list['members']:
+					res = g_slack.api_call("users.getPresence", user=user['id'])
+					strMsg = "**" + user['name'] + "** is " + res['presence']
+					await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg)
 				while g_bSlackChatOn:
 					try:
 						listRes = g_slack.rtm_read()
@@ -121,7 +125,7 @@ async def realtime_slack(client):
 						for dic in listRes:
 							if 'type' in dic:
 								if dic['type'] == 'hello':
-									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready.")
+									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready. :slight_smile:")
 								else:
 									await slack_output(client, dic)
 					finally:
@@ -144,14 +148,15 @@ async def watch_slack(client):
 			if g_bSlackChatOn == False:
 				if len(g_slack_channel_list) == 0:
 					g_slack_channel_list = g_slack.api_call("channels.list")
-				for channel in g_slack_channel_list:
-					#listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=now, oldest=time.time()-g_polling_hours*3600-100)
-					listRes = g_slack.api_call("channels.history", channel=channel['id'])
+				for channel in g_slack_channel_list['channels']:
+					listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=time.time(), oldest=time.time()-g_polling_hours*3600-100)
+					#listRes = g_slack.api_call("channels.history", channel=channel['id'])
 					print(listRes)
-					for dic in listRes:
+					for dic in listRes['messages']:
 						await slack_output(client, dic)
 				
 			await asyncio.sleep(g_polling_hours*3600)
+		await asyncio.sleep(30)
 
 ##############################################################
 # events 
@@ -209,7 +214,7 @@ async def on_message(message):
 		else:
 			g_bSlackChatOn = True
 			await set_status_string(client)
-			await client.send_message(message.channel, "Syncing with Slack started. :slight_smile:")
+			await client.send_message(message.channel, "Starting syncing with Slack...")
 	
 	### prefix + "slackchat_end" : end syncing with Slack ###
 	if message.content.casefold() == (g_strPrefix+"slackchat_end").casefold():
@@ -237,11 +242,13 @@ async def on_message(message):
 		else:
 			g_slack_chat_channel = channel_name
 		
-	### prefix + "whois" : print username from userID of Slack ###
-	if message.content.casefold().startswith((g_strPrefix+"whois").casefold()):
-		await cleient.send_message(message.channel, get_slack_user_name(message.content[7:]))
-		
-		
+	### prefix + "s_whois" : print username from userID of Slack ###
+	if message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):
+		await client.send_message(message.channel, get_slack_user_name(message.content[7:]))
+	
+	### prefix + "s_web" : print web client URL for the slack server ###
+	if message.content.casefold().startswith((g_strPrefix+"s_web").casefold()):
+		await client.send_message(client.get_channel(g_discord_SlackChannel_ID), CactusConsts.Slack_webclient_URL)
 
 @client.event
 async def on_ready():
@@ -270,7 +277,7 @@ async def on_ready():
 loop = asyncio.get_event_loop()
 try:
 	loop.create_task(realtime_slack(client))
-	#loop.create_task(watch_slack(client))
+	loop.create_task(watch_slack(client))
 	loop.run_until_complete(client.run(CactusConsts.cacti_username, CactusConsts.cacti_password))
 	
 except KeyboardInterrupt:

@@ -4,6 +4,7 @@
 
 import discord 
 import asyncio
+import time
 from slackclient import SlackClient
 from cactusconsts import CactusConsts
 
@@ -25,6 +26,8 @@ g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
 g_slack_user_list = {}
 g_slack_chat_channel = "test"
+g_polling_hours = 0.5  # time interval for polling slack in hours
+
 
 ##############################################################
 # utils
@@ -77,7 +80,33 @@ def get_slack_user_name(user_ID):
 			break
 	return name		
 	
-					
+# ts should be total sec since epoch time, like "1480832827.000006" as string
+def format_time_output(ts):
+	return 	time.strftime("%Y/%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
+	
+# format and output dectionary type response from slack to discord channel
+async def slack_output(client, dic):
+	global g_discord_SlackChannel_ID
+	if 'type' in dic:
+		strMsg = ""
+		if dic['type'] == 'message':            # support only message for now
+			user = "?"
+			if 'user' in dic:
+				user = get_slack_user_name(dic['user'])
+			elif 'username' in dic:
+				user = dic['username']
+			channame = get_slack_channel_name(dic['channel'])
+			tm = format_time_output(dic['ts'])
+			print("user:",user,"in", channame, "at", tm)
+			strMsg = "**" + user + "**" + " said in *#" + channame + "* at " + tm + " :\n" + dic['text']
+		elif dic['type'] == 'presence_change':
+			tm = "?"
+			if 'ts' in dic:
+				tm = format_time_output(dic['ts'])
+			strMsg = "**" + get_slack_user_name(dic['user']) + "** went **" + dic['presence'] + "** at " + tm		
+		if len(strMsg) > 0:
+			await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg) 
+		
 async def realtime_slack(client):
 	global g_bSlackChatOn
 	global g_discord_SlackChannel_ID
@@ -93,16 +122,8 @@ async def realtime_slack(client):
 							if 'type' in dic:
 								if dic['type'] == 'hello':
 									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready.")
-								elif dic['type'] == 'message':            # support only message for now
-									user = "?"
-									if 'user' in dic:
-										user = get_slack_user_name(dic['user'])
-									elif 'username' in dic:
-										user = dic['username']
-									channame = get_slack_channel_name(dic['channel'])
-									print("user:",user,"in", channame)
-									strMsg = "**" + user + "**" + " said in *#" + channame + "* :\n" + dic['text']
-									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg)  
+								else:
+									await slack_output(client, dic)
 					finally:
 						await asyncio.sleep(5)
 			else:
@@ -111,6 +132,26 @@ async def realtime_slack(client):
 				await asyncio.sleep(30)
 		else:
 			await asyncio.sleep(30)
+		
+# get slack history every g_polling_hours and output to discord channel of g_discord_SlackChannel_ID
+async def watch_slack(client):
+	global g_bSlackChatOn
+	global g_discord_SlackChannel_ID
+	global g_slack_channel_list
+	global g_polling_hours
+	while not client.is_closed:
+		while client.is_logged_in:
+			if g_bSlackChatOn == False:
+				if len(g_slack_channel_list) == 0:
+					g_slack_channel_list = g_slack.api_call("channels.list")
+				for channel in g_slack_channel_list:
+					#listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=now, oldest=time.time()-g_polling_hours*3600-100)
+					listRes = g_slack.api_call("channels.history", channel=channel['id'])
+					print(listRes)
+					for dic in listRes:
+						await slack_output(client, dic)
+				
+			await asyncio.sleep(g_polling_hours*3600)
 
 ##############################################################
 # events 
@@ -229,6 +270,7 @@ async def on_ready():
 loop = asyncio.get_event_loop()
 try:
 	loop.create_task(realtime_slack(client))
+	#loop.create_task(watch_slack(client))
 	loop.run_until_complete(client.run(CactusConsts.cacti_username, CactusConsts.cacti_password))
 	
 except KeyboardInterrupt:

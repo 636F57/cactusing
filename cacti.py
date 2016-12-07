@@ -27,7 +27,7 @@ g_slack_channel_list = {}
 g_slack_user_list = {}
 g_slack_chat_channel = "test"
 g_polling_hours = 0.5  # time interval for polling slack in hours
-
+g_lastpolling = 0
 
 ##############################################################
 # utils
@@ -85,7 +85,7 @@ def format_time_output(ts):
 	return 	time.strftime("%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
 	
 # format and output dectionary type response from slack to discord channel
-async def slack_output(client, dic):
+async def slack_output(client, dic, channelid):
 	global g_discord_SlackChannel_ID
 	if 'type' in dic:
 		strMsg = ""
@@ -95,7 +95,8 @@ async def slack_output(client, dic):
 				user = get_slack_user_name(dic['user'])
 			elif 'username' in dic:
 				user = dic['username']
-			channame = get_slack_channel_name(dic['channel'])
+			print(channelid)
+			channame = get_slack_channel_name(channelid)
 			tm = format_time_output(dic['ts'])
 			print("user:",user,"in", channame, "at", tm)
 			strMsg = "**" + user + "**" + " said in *#" + channame + "* at __" + tm + "__ :\n" + dic['text']
@@ -127,7 +128,8 @@ async def realtime_slack(client):
 								if dic['type'] == 'hello':
 									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready. :slight_smile:")
 								else:
-									await slack_output(client, dic)
+									print(dic)
+									await slack_output(client, dic, dic['channel'])
 					finally:
 						await asyncio.sleep(5)
 			else:
@@ -139,25 +141,36 @@ async def realtime_slack(client):
 		
 # get slack history every g_polling_hours and output to discord channel of g_discord_SlackChannel_ID
 async def watch_slack(client):
-	global g_bSlackChatOn
-	global g_discord_SlackChannel_ID
-	global g_slack_channel_list
 	global g_polling_hours
 	while not client.is_closed:
 		while client.is_logged_in:
-			if g_bSlackChatOn == False:
-				if len(g_slack_channel_list) == 0:
-					g_slack_channel_list = g_slack.api_call("channels.list")
-				for channel in g_slack_channel_list['channels']:
-					listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=time.time(), oldest=time.time()-g_polling_hours*3600-100)
-					#listRes = g_slack.api_call("channels.history", channel=channel['id'])
-					print(listRes)
-					for dic in listRes['messages']:
-						await slack_output(client, dic)
-				
+			await check_slack(client)	
 			await asyncio.sleep(g_polling_hours*3600)
 		await asyncio.sleep(30)
 
+async def check_slack(client):
+	global g_polling_hours
+	global g_lastpolling
+	global g_slack_channel_list
+	global g_bSlackChatOn
+	global g_discord_SlackChannel_ID
+
+	if g_bSlackChatOn == False:
+		if g_slack.rtm_connect():   #need to login to get proper data. cant find other way to login...
+			await asyncio.sleep(10)  # wait a bit to make sure logged in
+			if len(g_slack_channel_list) == 0:
+				g_slack_channel_list = g_slack.api_call("channels.list")
+			oldesttime = g_lastpolling
+			if g_lastpolling == 0:
+				oldesttime = time.time()-g_polling_hours*3600
+			g_lastpolling = time.time()-100
+			for channel in g_slack_channel_list['channels']:
+				listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=time.time(), oldest=oldesttime)
+				print(listRes)
+				for dic in reversed(listRes['messages']):
+					await slack_output(client, dic, channel['id'])
+			
+		
 ##############################################################
 # events 
 
@@ -233,7 +246,7 @@ async def on_message(message):
 		else:
 			g_slack.api_call("chat.postMessage", channel="#"+g_slack_chat_channel, text=message.content[3:])
 
-	### prefix + "s_channel" : change the Slack channel to send messages ###
+	### prefix + "s_channel" : change the Slack's channel to send messages ###
 	if message.content.casefold().startswith((g_strPrefix+"s_channel").casefold()):
 		channel_name = message.content[11:].strip()
 		print(channel_name)
@@ -241,7 +254,11 @@ async def on_message(message):
 			await client.send_message(message.channel, "No such channel was found. :cry:")
 		else:
 			g_slack_chat_channel = channel_name
-		
+	
+	### prefix + "s_check" : get updated info of slack activities since last check ###
+	if message.content.casefold().startswith((g_strPrefix+"s_check").casefold()):
+		await check_slack(client)
+
 	### prefix + "s_whois" : print username from userID of Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):
 		await client.send_message(message.channel, get_slack_user_name(message.content[7:]))

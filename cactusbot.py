@@ -387,7 +387,7 @@ async def process_github(bot, entries, lastcheck, channel):
 			print(strSay)
 			await bot.send_message(channel, strSay)
 
-# updatedtime should be in the format like: 2016-11-11 12:38:34 +0200  #changed 3rd.dec.2016
+# updatedtime should be in the format like: 2016-11-11T12:38:34+02:00(reddit) or 2016-11-11T12:38:34Z(github)  #changed 8th.dec.2016
 # lastcheck is the string which is stored in RSSfile		
 def is_updated(updatedtime, lastcheck):
 	print(updatedtime)
@@ -397,7 +397,9 @@ def is_updated(updatedtime, lastcheck):
 		updatedtime = times[0]
 		shifttimes = times[1][:2]
 		shiftsec = int(shifttimes[0]) * 3600 + int(shifttimes[1]) * 60
-	sttime = time.strptime(updatedtime, "%Y-%m-%d %H:%M:%S ")
+	elif 'Z' in updatetime:
+		updatetime = updatetime[:-1]
+	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
 	updated_insec = calendar.timegm(sttime) - shiftsec
 	print ("updated, since = ",updated_insec, lastcheck)
 	if updated_insec < int(lastcheck):

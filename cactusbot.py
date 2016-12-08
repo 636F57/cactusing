@@ -397,8 +397,8 @@ def is_updated(updatedtime, lastcheck):
 		updatedtime = times[0]
 		shifttimes = times[1][:2]
 		shiftsec = int(shifttimes[0]) * 3600 + int(shifttimes[1]) * 60
-	elif 'Z' in updatetime:
-		updatetime = updatetime[:-1]
+	elif 'Z' in updatedtime:
+		updatedtime = updatedtime[:-1]
 	sttime = time.strptime(updatedtime, "%Y-%m-%dT%H:%M:%S")
 	updated_insec = calendar.timegm(sttime) - shiftsec
 	print ("updated, since = ",updated_insec, lastcheck)

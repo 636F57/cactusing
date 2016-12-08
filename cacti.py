@@ -85,7 +85,7 @@ def format_time_output(ts):
 	return 	time.strftime("%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
 	
 # format and output dectionary type response from slack to discord channel
-async def slack_output(client, dic, channelid):
+async def slack_output(client, dic, slackeventchannelid):
 	global g_discord_SlackChannel_ID
 	if 'type' in dic:
 		strMsg = ""
@@ -95,8 +95,8 @@ async def slack_output(client, dic, channelid):
 				user = get_slack_user_name(dic['user'])
 			elif 'username' in dic:
 				user = dic['username']
-			print(channelid)
-			channame = get_slack_channel_name(channelid)
+			#print(slackeventchannelid)
+			channame = get_slack_channel_name(slackeventchannelid)
 			tm = format_time_output(dic['ts'])
 			print("user:",user,"in", channame, "at", tm)
 			strMsg = "**" + user + "**" + " said in *#" + channame + "* at __" + tm + "__ :\n" + dic['text']
@@ -127,9 +127,11 @@ async def realtime_slack(client):
 							if 'type' in dic:
 								if dic['type'] == 'hello':
 									await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Slack chat is ready. :slight_smile:")
-								else:
+								elif 'channel' in dic:
 									print(dic)
 									await slack_output(client, dic, dic['channel'])
+								else:
+									await slack_output(client, dic, "")
 					finally:
 						await asyncio.sleep(5)
 			else:

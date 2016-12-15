@@ -248,7 +248,7 @@ async def rss_add_reddit(ctx):
 	print("CACTUS ROOMS SERVER ID:",ctx.message.server.id)
 	if channelID == "":
 		channelID = ctx.message.channel.id
-	line += ","+ channelID + "\n"
+	line += ","+ channelID + "," + ctx.message.author.id + "\n"
 	with open(filenameRSS, "a+") as f:
 		f.write(line)
 	await bot.say(":cactus:"+sub+" was added to RSS list.:cactus:")
@@ -267,7 +267,7 @@ async def rss_add_github(ctx):
 		channelID = get_channel_ID(bot, ctx.message.server.id, channel_name)
 		if channelID == "":
 			channelID = ctx.message.channel.id
-		line += ","+ channelID + "\n"
+		line += ","+ channelID + "," + ctx.message.author.id + "\n"
 		f.write(line)
 	await bot.say(":cactus:"+url+" was added to RSS list.:cactus:")
 	

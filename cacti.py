@@ -159,6 +159,21 @@ async def check_slack(client):
 
 	if g_bSlackChatOn == False:
 		if g_slack.rtm_connect():   #need to login to get proper data. cant find other way to login...
+			nTry = 1
+			while nTry:
+				listRes = g_slack.rtm_read()
+				for dic in listRes:
+					if 'type' in dic:
+						if dic['type'] == 'hello':
+							bTry = 0
+							print("got 'hello' response.")
+							break;
+				else:
+					nTry += 1
+					if nTry > 10:
+						nTry = 0     # wait 10 packets at maximum
+						print("rtm_connect is not confirmed.")
+			#try checking anyways
 			await asyncio.sleep(10)  # wait a bit to make sure logged in
 			if len(g_slack_channel_list) == 0:
 				g_slack_channel_list = g_slack.api_call("channels.list")
@@ -221,6 +236,11 @@ async def on_message(message):
 	if message.content.casefold().startswith((g_strPrefix+"repeat").casefold()):
 		await client.send_message(message.channel, message.content[8:])
 	
+	### CactusBot said "Happy Birthday" : say "Happy Birthday" too. ###
+	if message.content.casefold().startswith(("happy birthday").casefold()):
+		if message.author.id == CactusConsts.CactusBot_ID:
+			await client.send_message(message.channel, "Happy Birthday!!! :heart: :birthday: :tada:")
+	
 	### prefix + "slackchat_start" : start syncing with Slack ###
 	if message.content.casefold() == (g_strPrefix+"slackchat_start").casefold():
 		if g_bSlackChatOn:
@@ -265,8 +285,8 @@ async def on_message(message):
 	if message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):
 		await client.send_message(message.channel, get_slack_user_name(message.content[7:]))
 	
-	### prefix + "s_web" : print web client URL for the slack server ###
-	if message.content.casefold().startswith((g_strPrefix+"s_web").casefold()):
+	### prefix + "s_url" : print web client URL for the slack server ###
+	if message.content.casefold().startswith((g_strPrefix+"s_url").casefold()):
 		await client.send_message(client.get_channel(g_discord_SlackChannel_ID), CactusConsts.Slack_webclient_URL)
 
 @client.event

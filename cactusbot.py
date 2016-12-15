@@ -46,7 +46,7 @@ async def on_ready():
 ####  For music utility  ####
 @bot.event
 async def on_message(message):	
-	print("on message : ", message.content, message.author.name, message.author.id)
+	print("on message : ", message.author.name, message.author.id)
 	global g_listEcho
 	if (message.author.id == Mee6_ID):
 		print("message by Mee6")
@@ -373,7 +373,7 @@ async def process_reddit(bot, entries, lastcheck, channel):
 				if '[comments]' in url:
 					strSay += url['href'] + "\n"
 					break
-			print(strSay)
+			#print(strSay)
 			await bot.send_message(channel, strSay)
 
 async def process_github(bot, entries, lastcheck, channel):
@@ -416,6 +416,12 @@ async def test():
 	await bot.say("RSS test started.")
 	await checkRSS(bot)
 
+@bot.command(pass_context=True)
+async def b(ctx):
+	"""command for Birthday Wish"""
+	command,name = ctx.message.content.split(' ')
+	await bot.say("Happy Birthday to **" + name + "**! :cactus: :tada:")
+	
 ######################################
 
 loop = asyncio.get_event_loop()

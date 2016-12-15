@@ -241,7 +241,7 @@ async def on_message(message):
 		if message.content.casefold().startswith(("happy birthday").casefold()):		
 			await client.send_message(message.channel, "Happy Birthday!!! :heart: :birthday: :tada:")
 	### Repost the GitHub news to Slack's github channel ###
-		else:
+		elif "New Commit" in message.content:
 			for repo in CactusConsts.listGitHubRepos_toSlack:
 				if repo.casefold() in message.content.casefold():
 					newmsg = message.content.replace(":cactus:", ":computer:")

@@ -237,10 +237,17 @@ async def on_message(message):
 		await client.send_message(message.channel, message.content[8:])
 	
 	### CactusBot said "Happy Birthday" : say "Happy Birthday" too. ###
-	if message.content.casefold().startswith(("happy birthday").casefold()):
-		if message.author.id == CactusConsts.CactusBot_ID:
+	if message.author.id == CactusConsts.CactusBot_ID:
+		if message.content.casefold().startswith(("happy birthday").casefold()):		
 			await client.send_message(message.channel, "Happy Birthday!!! :heart: :birthday: :tada:")
-	
+	### Repost the GitHub news to Slack's github channel ###
+		else:
+			for repo in CactusConsts.listGitHubRepos_toSlack:
+				if repo.casefold() in message.content.casefold():
+					newmsg = message.content.replace(":cactus:", ":computer:")
+					g_slack.api_call("chat.postMessage", channel="#github", text=newmsg)
+					break
+		
 	### prefix + "slackchat_start" : start syncing with Slack ###
 	if message.content.casefold() == (g_strPrefix+"slackchat_start").casefold():
 		if g_bSlackChatOn:

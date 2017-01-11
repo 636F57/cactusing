@@ -26,7 +26,7 @@ g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
 g_slack_user_list = {}
 g_slack_chat_channel = "test"
-g_polling_hours = 0.5  # time interval for polling slack in hours
+g_polling_hours = 3  # time interval for polling slack in hours
 g_lastpolling = 0
 
 ##############################################################
@@ -169,21 +169,22 @@ async def check_slack(client):
 							print("got 'hello' response.")
 							break;
 				else:
+					await asyncio.sleep(2)
 					nTry += 1
 					if nTry > 10:
 						nTry = 0     # wait 10 packets at maximum
 						print("rtm_connect is not confirmed.")
 			#try checking anyways
-			await asyncio.sleep(10)  # wait a bit to make sure logged in
 			if len(g_slack_channel_list) == 0:
 				g_slack_channel_list = g_slack.api_call("channels.list")
 			oldesttime = g_lastpolling
 			if g_lastpolling == 0:
 				oldesttime = time.time()-g_polling_hours*3600
 			g_lastpolling = time.time()-100
+			print("polling slack for latest=", time.time(), "oldest=", oldesttime)
 			for channel in g_slack_channel_list['channels']:
-				listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=time.time(), oldest=oldesttime)
-				print(listRes)
+				listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=str(time.time()), oldest=str(oldesttime))
+				print(channel['name'],"new messages =", len(listRes['messages']))
 				for dic in reversed(listRes['messages']):
 					await slack_output(client, dic, channel['id'])
 			
@@ -286,7 +287,10 @@ async def on_message(message):
 	
 	### prefix + "s_check" : get updated info of slack activities since last check ###
 	if message.content.casefold().startswith((g_strPrefix+"s_check").casefold()):
-		await check_slack(client)
+		if g_bSlackChatOn:
+			await client.send_message(g_slack_chat_channel, "You cannot check history when realtime chatting. :(")
+		else:
+			await check_slack(client)
 
 	### prefix + "s_whois" : print username from userID of Slack ###
 	if message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):

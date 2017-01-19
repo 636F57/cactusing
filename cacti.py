@@ -8,6 +8,7 @@ import time
 from slackclient import SlackClient
 from cactusconsts import CactusConsts
 
+
 if not discord.opus.is_loaded():
 	discord.opus.load_opus('libopus-0.dll')
 print("opus dll is loaded = ", discord.opus.is_loaded())
@@ -21,6 +22,7 @@ g_slack = SlackClient(CactusConsts.Slack_bot_Token)
 
 g_bShouldEcho = True
 g_bSlackChatOn = False
+g_bNowPolling = False
 g_strPrefix = "%"
 g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
@@ -35,9 +37,14 @@ g_lastpolling = 0
 async def set_status_string(client):
 	global g_bShouldEcho
 	global g_bSlackChatOn
+	global g_bNowPolling
 	strStatus = ""
 	if g_bShouldEcho:
 		strStatus += "Echo"
+	if g_bNowPolling:
+		if len(strStatus) > 0:
+			strStatus += ", "
+		strStatus += "Polling"
 	if g_bSlackChatOn:
 		if len(strStatus) > 0:
 			strStatus += ", "
@@ -84,7 +91,7 @@ def get_slack_user_name(user_ID):
 def format_time_output(ts):
 	return 	time.strftime("%m/%d(%a) %H:%M:%S UTC", time.gmtime(int(ts.split('.')[0])))
 	
-# format and output dectionary type response from slack to discord channel
+# format and output JSON response from slack to discord channel
 async def slack_output(client, dic, slackeventchannelid):
 	global g_discord_SlackChannel_ID
 	if 'type' in dic:
@@ -105,6 +112,33 @@ async def slack_output(client, dic, slackeventchannelid):
 		if len(strMsg) > 0:
 			await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg) 
 		
+# retrieve the channel history of the target time slot
+async def slack_output_history(client, channel_ID, latest, oldest):
+	listRes = g_slack.api_call("channels.history", channel=channel_ID, latest=latest, oldest=oldest)
+	print(get_slack_channel_name(channel_ID),"new messages =", len(listRes['messages']))
+	tmplistResMsgs = [listRes['messages']]
+	while len(listRes['messages'])>0 and listRes['has_more']:
+		listRes = g_slack.api_call("channels.history", channel=channel_ID, latest=listRes['messages'][-1]['ts'], oldest=oldest)
+		tmplistResMsgs.append(listRes['messages'])
+	for listResMsg in reversed(tmplistResMsgs):
+		for dic in reversed(listResMsg):
+			await slack_output(client, dic, channel_ID)
+
+# get all the channel history and then locally extract messages of the target time slot. (use when above method wont work)
+async def slack_output_history2(client, channel_ID, latest, oldest):
+	listRes = g_slack.api_call("channels.history", channel=channel_ID)
+	print(get_slack_channel_name(channel_ID),"new messages =", len(listRes['messages']))
+	tmplistResMsgs = [listRes['messages']]
+	while len(listRes['messages'])>0 and listRes['has_more'] and float(listRes['messages'][-1]['ts']) > float(oldest):
+		listRes = g_slack.api_call("channels.history", channel=channel_ID, latest=listRes['messages'][-1]['ts'])
+		tmplistResMsgs.append(listRes['messages'])
+	for listResMsg in reversed(tmplistResMsgs):
+		for dic in reversed(listResMsg):
+			f_ts = float(dic['ts'])
+			if f_ts < float(latest) and f_ts > float(oldest):
+				await slack_output(client, dic, channel_ID)
+			
+			
 async def realtime_slack(client):
 	global g_bSlackChatOn
 	global g_discord_SlackChannel_ID
@@ -133,7 +167,7 @@ async def realtime_slack(client):
 								else:
 									await slack_output(client, dic, "")
 					finally:
-						await asyncio.sleep(5)
+						await asyncio.sleep(1)
 			else:
 				print("rtm connection failed")
 				await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "Connection failed.")
@@ -156,8 +190,11 @@ async def check_slack(client):
 	global g_slack_channel_list
 	global g_bSlackChatOn
 	global g_discord_SlackChannel_ID
+	global g_bNowPolling
 
 	if g_bSlackChatOn == False:
+		g_bNowPolling = True
+		await set_status_string(client)
 		if g_slack.rtm_connect():   #need to login to get proper data. cant find other way to login...
 			nTry = 1
 			while nTry:
@@ -183,11 +220,12 @@ async def check_slack(client):
 			g_lastpolling = time.time()-100
 			print("polling slack for latest=", time.time(), "oldest=", oldesttime)
 			for channel in g_slack_channel_list['channels']:
-				listRes = g_slack.api_call("channels.history", channel=channel['id'], latest=str(time.time()), oldest=str(oldesttime))
-				print(channel['name'],"new messages =", len(listRes['messages']))
-				for dic in reversed(listRes['messages']):
-					await slack_output(client, dic, channel['id'])
-			
+				await slack_output_history(client, channel['id'], str(time.time()), str(oldesttime))
+				#await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "now re-try with method2...") #for debug
+				#await slack_output_history2(client, channel['id'], str(time.time()), str(oldesttime)) #for debug
+				#await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "done")  #for debug
+		g_bNowPolling = False
+		await set_status_string(client)
 		
 ##############################################################
 # events 
@@ -199,6 +237,7 @@ async def on_message(message):
 	global g_bSlackChatOn
 	global g_strPrefix
 	global g_slack_chat_channel
+	global g_polling_hours
 	
 	### prefix + "echo" : toggle echoing CactusBot ###
 	if message.content.casefold() ==  (g_strPrefix+"echo").casefold():
@@ -212,7 +251,7 @@ async def on_message(message):
 			await set_status_string(client)
 
 	### automatic echoing ###
-	if (message.author.id == CactusBot_ID):
+	elif (message.author.id == CactusBot_ID):
 		print("message by CactusBot")
 		if g_bShouldEcho:
 			if (message.content.startswith("-play")) | (message.content.startswith(":request")):
@@ -220,7 +259,7 @@ async def on_message(message):
 				await client.send_message(message.channel, message.content)
 	
 	### prefix + "voice" : join the voice channel which commander belongs to ###
-	if message.content.casefold() == (g_strPrefix+"voice").casefold():
+	elif message.content.casefold() == (g_strPrefix+"voice").casefold():
 		voiceclient = client.voice_client_in(message.server)
 		print(message.server)
 		if voiceclient == None:
@@ -230,15 +269,15 @@ async def on_message(message):
 			await voiceclient.move_to(message.channel)
 			
 	### prefix + "test" : just for test and debug ###
-	if message.content.casefold() == (g_strPrefix+"test").casefold():
+	elif message.content.casefold() == (g_strPrefix+"test").casefold():
 		await client.send_message(message.channel, ":music play")
 	
 	### prefix + "repeat" : repeat the sentence ###
-	if message.content.casefold().startswith((g_strPrefix+"repeat").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"repeat").casefold()):
 		await client.send_message(message.channel, message.content[8:])
 	
 	### CactusBot said "Happy Birthday" : say "Happy Birthday" too. ###
-	if message.author.id == CactusConsts.CactusBot_ID:
+	elif message.author.id == CactusConsts.CactusBot_ID:
 		if message.content.casefold().startswith(("happy birthday").casefold()):		
 			await client.send_message(message.channel, "Happy Birthday!!! :heart: :birthday: :tada:")
 	### Repost the GitHub news to Slack's github channel ###
@@ -250,7 +289,7 @@ async def on_message(message):
 					break
 		
 	### prefix + "slackchat_start" : start syncing with Slack ###
-	if message.content.casefold() == (g_strPrefix+"slackchat_start").casefold():
+	elif message.content.casefold() == (g_strPrefix+"slackchat_start").casefold():
 		if g_bSlackChatOn:
 			await client.send_message(message.channel, "It's already connected to Slack. :slight_smile:")
 			return
@@ -260,7 +299,7 @@ async def on_message(message):
 			await client.send_message(message.channel, "Starting syncing with Slack...")
 	
 	### prefix + "slackchat_end" : end syncing with Slack ###
-	if message.content.casefold() == (g_strPrefix+"slackchat_end").casefold():
+	elif message.content.casefold() == (g_strPrefix+"slackchat_end").casefold():
 		if g_bSlackChatOn == False:
 			await client.send_message(message.channel, "It's already disconnected from Slack. :slight_smile:")
 			return
@@ -270,14 +309,14 @@ async def on_message(message):
 			await client.send_message(message.channel, "Syncing with Slack ended. :slight_smile:")
 
 	### prefix + "s" : send message to Slack ###
-	if message.content.casefold().startswith((g_strPrefix+"s ").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"s ").casefold()):
 		if g_bSlackChatOn:
 			g_slack.rtm_send_message(g_slack_chat_channel, message.content[3:])
 		else:
 			g_slack.api_call("chat.postMessage", channel="#"+g_slack_chat_channel, text=message.content[3:])
 
 	### prefix + "s_channel" : change the Slack's channel to send messages ###
-	if message.content.casefold().startswith((g_strPrefix+"s_channel").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"s_channel").casefold()):
 		channel_name = message.content[11:].strip()
 		print(channel_name)
 		if get_slack_channel_ID(channel_name) == 0:
@@ -286,18 +325,30 @@ async def on_message(message):
 			g_slack_chat_channel = channel_name
 	
 	### prefix + "s_check" : get updated info of slack activities since last check ###
-	if message.content.casefold().startswith((g_strPrefix+"s_check").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"s_check").casefold()):
 		if g_bSlackChatOn:
 			await client.send_message(g_slack_chat_channel, "You cannot check history when realtime chatting. :(")
 		else:
 			await check_slack(client)
 
+	### prefix + "s_interval" : set polling intervals in hours ###
+	elif message.content.casefold().startswith((g_strPrefix+"s_interval").casefold()):
+		cmd, interval = message.content.split()
+		if isdigit(interval.remove('.')):
+			f_interval = float(interval)
+			if f_interval > 0:
+				g_polling_hours = f_interval
+				await client.send_message(message.channel, "polling interal was set to "+interval+"hours. :)")
+				return
+		await client.send_message(message.channel, "Please specify number (int or float) in hours for interval")
+				
+			
 	### prefix + "s_whois" : print username from userID of Slack ###
-	if message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"s_whois").casefold()):
 		await client.send_message(message.channel, get_slack_user_name(message.content[7:]))
 	
 	### prefix + "s_url" : print web client URL for the slack server ###
-	if message.content.casefold().startswith((g_strPrefix+"s_url").casefold()):
+	elif message.content.casefold().startswith((g_strPrefix+"s_url").casefold()):
 		await client.send_message(client.get_channel(g_discord_SlackChannel_ID), CactusConsts.Slack_webclient_URL)
 
 @client.event

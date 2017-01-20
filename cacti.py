@@ -5,8 +5,10 @@
 import discord 
 import asyncio
 import time
+import re
 from slackclient import SlackClient
 from cactusconsts import CactusConsts
+
 
 
 if not discord.opus.is_loaded():
@@ -28,7 +30,7 @@ g_discord_SlackChannel_ID = CactusConsts.Slack_Channel_ID
 g_slack_channel_list = {}
 g_slack_user_list = {}
 g_slack_chat_channel = "test"
-g_polling_hours = 3  # time interval for polling slack in hours
+g_polling_hours = 0.5  # time interval for polling slack in hours
 g_lastpolling = 0
 
 ##############################################################
@@ -111,6 +113,7 @@ async def slack_output(client, dic, slackeventchannelid):
 			strMsg = "**" + get_slack_user_name(dic['user']) + "** is now **" + dic['presence'] + "**"		
 		if len(strMsg) > 0:
 			await client.send_message(client.get_channel(g_discord_SlackChannel_ID), strMsg) 
+			print(chr(0x07)) #beep as notification
 		
 # retrieve the channel history of the target time slot
 async def slack_output_history(client, channel_ID, latest, oldest):
@@ -205,7 +208,7 @@ async def check_slack(client):
 							bTry = 0
 							print("got 'hello' response.")
 							break;
-				else:
+				if nTry:
 					await asyncio.sleep(2)
 					nTry += 1
 					if nTry > 10:
@@ -223,9 +226,10 @@ async def check_slack(client):
 				await slack_output_history(client, channel['id'], str(time.time()), str(oldesttime))
 				#await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "now re-try with method2...") #for debug
 				#await slack_output_history2(client, channel['id'], str(time.time()), str(oldesttime)) #for debug
-				#await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "done")  #for debug
+				#await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "done")  
 		g_bNowPolling = False
 		await set_status_string(client)
+		await client.send_message(client.get_channel(g_discord_SlackChannel_ID), "polling done.") 
 		
 ##############################################################
 # events 
@@ -334,13 +338,14 @@ async def on_message(message):
 	### prefix + "s_interval" : set polling intervals in hours ###
 	elif message.content.casefold().startswith((g_strPrefix+"s_interval").casefold()):
 		cmd, interval = message.content.split()
-		if isdigit(interval.remove('.')):
+		interval = interval.strip()
+		print(interval)
+		if re.match("^\+?\d+?\.?\d*?$", interval) != None:
 			f_interval = float(interval)
-			if f_interval > 0:
-				g_polling_hours = f_interval
-				await client.send_message(message.channel, "polling interal was set to "+interval+"hours. :)")
-				return
-		await client.send_message(message.channel, "Please specify number (int or float) in hours for interval")
+			g_polling_hours = f_interval
+			await client.send_message(message.channel, "polling interal was set to "+interval+" hours.:slight_smile:")
+		else:
+			await client.send_message(message.channel, "Please specify number (int or float) in hours for interval")
 				
 			
 	### prefix + "s_whois" : print username from userID of Slack ###

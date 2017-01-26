@@ -34,7 +34,7 @@ marshmallowPrefix = ":request "
 g_RSSdictkey = ["index", "url", "lastModified", "eTag", "lastcheck", "channel_ID", "userID"]
 filenameRSS = "RSSdata"  #RSSdata format: "index","url","lastModified","eTag","lastcheck","channel_ID","userID"\n  for each entry
 g_session = aiohttp.ClientSession()
-g_intervalhours = 0.5 # RSS check interval in hours
+g_intervalhours = 2 # RSS check interval in hours
 		
 @bot.event
 async def on_ready():
@@ -51,7 +51,7 @@ async def on_message(message):
 	if (message.author.id == Mee6_ID):
 		print("message by Mee6")
 		if len(g_listEcho) > 0:
-			print(message.content)
+			#print(message.content)
 			if CactusConsts.Mee6_notfound_msg in message.content:
 				print("canceling 1 echo")
 				g_listEcho.pop(0)
@@ -59,7 +59,7 @@ async def on_message(message):
 				print("in echo")
 				await bot.send_message(message.channel, g_listEcho[0] + message.content)
 				g_listEcho.pop(0)
-				if (len(g_listEcho) > 0 ) & (g_listEcho[0] == marshmallowPrefix):
+				if (len(g_listEcho) > 0 ) and (g_listEcho[0] == marshmallowPrefix):
 						await asyncio.sleep(10)       # since requests to marshmallow must have 10sec intervals
 	else:				
 		await bot.process_commands(message)
@@ -152,8 +152,27 @@ async def feedm_url(number : int):
 		for i in range(number):
 			strCommand = marshmallowPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
 			await bot.say(strCommand)
-			time. sleep(9)       # since requests to marshmallow must have 10sec intervals
+			time. sleep(11)       # since requests to marshmallow must have 10sec intervals
 
+@bot.command()
+async def feedf_url_playlist():
+	"""Feed one of playlist url to FredBoat, randomly selecting from the FavoritePlaylists file."""
+	strFile = "./Songs/FavoritePlaylists"
+	with open(strFile, "rt") as f:
+		listURLs = f.readlines()
+		print("list length = ", len(listURLs))
+		strCommand = fredboadPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+		await bot.say(strCommand)
+
+@bot.command()
+async def feedm_url_playlist():
+	"""Feed one of playlist url to Marshmallow, randomly selecting from the FavoritePlaylists file."""
+	with open(strFile, "rt") as f:
+		listURLs = f.readlines()
+		print("list length = ", len(listURLs))
+		strCommand = marshmallowPrefix + listURLs[random.randint(0, len(listURLs)-1)] + "\n"
+		await bot.say(strCommand)
+			
 @bot.command()
 async def favor(song):
 	"""Add the song to Favorite.txt file."""
@@ -169,6 +188,15 @@ async def favor_url(url):
 	if url == "":
 		await bot.say("You must specify the URL to add.")
 	with open("./Songs/FavoriteURLs", "a+") as f:
+		f.write(url + "\n")
+	await bot.say(url + " is added. :cactus:")
+
+@bot.command()
+async def favor_url_playlist(url):
+	"""Add the playlist URL to FavoritePlaylists file."""
+	if url == "":
+		await bot.say("You must specify the URL to add.")
+	with open("./Songs/FavoritePlaylists", "a+") as f:
 		f.write(url + "\n")
 	await bot.say(url + " is added. :cactus:")
 
@@ -337,7 +365,7 @@ async def checkRSS(bot):
 							else:
 								rss["eTag"] = ""
 							body = await response.read()
-							soup = BeautifulSoup(body, 'lxml')
+							soup = BeautifulSoup(body)
 							entries = soup.find_all('entry')
 							if 'reddit' in rss["url"]:
 								await process_reddit(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
@@ -366,7 +394,7 @@ async def process_reddit(bot, entries, lastcheck, channel):
 			#print(entry.find('content').text)
 			postcontent = html.unescape(entry.find('content').text)
 			#print(postcontent)
-			postcontent = BeautifulSoup(postcontent, 'lxml')
+			postcontent = BeautifulSoup(postcontent)
 			urlcontent = postcontent.find_all('a')
 			#print(urlcontent)
 			for url in urlcontent:

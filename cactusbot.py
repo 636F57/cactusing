@@ -124,6 +124,7 @@ async def feedm(number : int, category='favorite'):
 			strCommand = "!youtube " + listSongs[random.randint(0, len(listSongs)-1)] + "\n"
 			await bot.say(strCommand)
 			g_listEcho.append(marshmallowPrefix)
+			time. sleep(11)       # since requests to marshmallow must have 10sec intervals
 	
 @bot.command()
 async def feedf_url(number : int):
@@ -167,6 +168,7 @@ async def feedf_url_playlist():
 @bot.command()
 async def feedm_url_playlist():
 	"""Feed one of playlist url to Marshmallow, randomly selecting from the FavoritePlaylists file."""
+	strFile = "./Songs/FavoritePlaylists"
 	with open(strFile, "rt") as f:
 		listURLs = f.readlines()
 		print("list length = ", len(listURLs))

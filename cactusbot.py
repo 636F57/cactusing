@@ -334,57 +334,62 @@ async def rss_del(index):
 async def checkRSS(bot):
 	global g_RSSdictkey
 	global g_session
-	while not bot.is_closed:
-		print("now in checkRSS.")
-		while bot.is_logged_in:
-			print("now start checking RSS updates...")
-			listRSSdict = read_rssfile()
-			if len(listRSSdict) == 0:
-				print("no RSS urls found.")
-			else:				
-				header = {'User-Agent':CactusConsts.UserAgentName}
-				
-				for rss in listRSSdict:
-					rss_backup = rss
-					try:
-						print("checking RSS of ", rss["url"])
-						if len(rss["lastModified"]) > 0:
-							header['If-Modified-Since'] = rss["lastModified"]   #Last-Modified
-						if len(rss["eTag"]) > 0:
-							header['If-None-Match'] = rss["eTag"]	     		#ETAG
-						response = await g_session.get(rss["url"], headers = header)
-						print("response status=",response.status)
-						if response.status == 304:
-							print("no update for ", rss["url"])
-						elif response.status == 200:
-							#print(response.headers)
-							if 'LAST-MODIFIED' in response.headers:
-								rss["lastModified"] = response.headers['LAST-MODIFIED']
+	try:
+		while not bot.is_closed:
+			print("now in checkRSS.")
+			while bot.is_logged_in:
+				print("now start checking RSS updates...")
+				listRSSdict = read_rssfile()
+				if len(listRSSdict) == 0:
+					print("no RSS urls found.")
+				else:				
+					header = {'User-Agent':CactusConsts.UserAgentName}
+					
+					for rss in listRSSdict:
+						rss_backup = rss
+						try:
+							print("checking RSS of ", rss["url"])
+							if len(rss["lastModified"]) > 0:
+								header['If-Modified-Since'] = rss["lastModified"]   #Last-Modified
+							if len(rss["eTag"]) > 0:
+								header['If-None-Match'] = rss["eTag"]	     		#ETAG
+							response = await g_session.get(rss["url"], headers = header)
+							print("response status=",response.status)
+							if response.status == 304:
+								print("no update for ", rss["url"])
+							elif response.status == 200:
+								#print(response.headers)
+								if 'LAST-MODIFIED' in response.headers:
+									rss["lastModified"] = response.headers['LAST-MODIFIED']
+								else:
+									rss["lastModified"] = ""
+								if 'ETAG' in response.headers:
+									rss["eTag"] = response.headers['ETAG']
+								else:
+									rss["eTag"] = ""
+								body = await response.read()
+								soup = BeautifulSoup(body)
+								entries = soup.find_all('entry')
+								if 'reddit' in rss["url"]:
+									await process_reddit(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
+								elif 'github' in rss["url"]:
+									await process_github(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
 							else:
-								rss["lastModified"] = ""
-							if 'ETAG' in response.headers:
-								rss["eTag"] = response.headers['ETAG']
-							else:
-								rss["eTag"] = ""
-							body = await response.read()
-							soup = BeautifulSoup(body)
-							entries = soup.find_all('entry')
-							if 'reddit' in rss["url"]:
-								await process_reddit(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
-							elif 'github' in rss["url"]:
-								await process_github(bot, entries, rss["lastcheck"], bot.get_channel(rss["channel_ID"]))
-						else:
-							await bot.say("Failed to get RSS feed from the server. " + rss["url"])
-						response.close()
-						rss["lastcheck"] = int(time.time())
-					except:
-						rss = rss_backup
-						print("error in checkRSS:",rss["url"])
-						print(traceback.format_exc())
-			write_rssfile(listRSSdict)		
-			await asyncio.sleep(g_intervalhours*3600)
-		await asyncio.sleep(30) #wait 30 seconds then retry
-
+								await bot.say("Failed to get RSS feed from the server. " + rss["url"])
+							response.close()
+							rss["lastcheck"] = int(time.time())
+						except:
+							rss = rss_backup
+							print("error in checkRSS:",rss["url"])
+							print(traceback.format_exc())
+				write_rssfile(listRSSdict)		
+				await asyncio.sleep(g_intervalhours*3600)
+			await asyncio.sleep(30) #wait 30 seconds then retry
+	except asyncio.CancelledError:
+		print("checkRSS task is cancelled by program")
+	except Exception as e:
+		print("Error in checkRSS:", e.args)
+		
 # functions which actrually parse the HTML and make the bot say the results
 async def process_reddit(bot, entries, lastcheck, channel):
 	for entry in entries:
@@ -460,12 +465,17 @@ try:
 	loop.run_until_complete(bot.start(CactusConsts.CactusBot_Token))
 	
 except KeyboardInterrupt:
+	print("KeyboardInterrupt")
+	
+except Exception as e:
+	print(e.args)
+	
+finally:
 	loop.run_until_complete(bot.logout())
 	# cancel all tasks lingering
 	tasks = asyncio.Task.all_tasks(loop)
 	for task in tasks:
 		task.cancel()
-finally:
 	loop.close()
 	if g_session:
 		g_session.close()
